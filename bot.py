@@ -4,11 +4,11 @@ from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 from dotenv import load_dotenv
 load_dotenv()
+script_path = os.path.abspath(os.path.dirname(__file__))
 TOKEN = os.environ["TOKEN"]
-uri = os.environ["MONGO_URI"]
-
+uri = os.environ["MONGODB_URI"]
 client = MongoClient(uri, server_api=ServerApi('1'))
-db = client['mydatabase']
+db = client["discord_bot"]
 counter = db['counter']
 # Send a ping to confirm a successful connection
 try:
@@ -29,6 +29,7 @@ class Bot(commands.Bot):
 bot = Bot()
 
 @bot.hybrid_command(name="add", help="Adds one to the database")
+@commands.cooldown(1, 5, commands.BucketType.user)
 async def add(ctx):
     result = counter.find_one_and_update({'_id': 'counter'}, {'$inc': {'count': 1}}, upsert=True)
     await ctx.send(f'Counter incremented to {result["count"]}')
@@ -40,7 +41,11 @@ async def hybrid_command(ctx: commands.Context):
     else:
         await ctx.send("This is a regular command!")
 
-@bot.hybrid_command(name = "test", with_app_command = True, description = "Testing")
+@bot.hybrid_command(name="hi", help="Says hello")
+async def hi(ctx):
+    await ctx.send(f'Hello!')
+
+@bot.hybrid_command(name = "test", help = "Testing")
 async def test(ctx: commands.Context):
     await ctx.reply("hi!", ephemeral=True)
 
@@ -58,8 +63,9 @@ async def sync(ctx):
 async def on_ready():
     await bot.change_presence(
         activity=discord.Game('>help | bot by n01b'))
-    await bot.load_extension('cogs.ModCog')
-    await bot.load_extension('cogs.WeatherCog')
+    for filename in os.listdir(f'{script_path}/cogs'):
+        if filename.endswith('.py'):
+            await bot.load_extension(f'cogs.{filename[:-3]}')
     print(f'Logged in as {bot.user}')
 
 bot.run(TOKEN)
