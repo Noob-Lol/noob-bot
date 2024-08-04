@@ -1,7 +1,6 @@
 import discord
 from discord.ext import commands
-import random
-import os
+import random, os
 from pymongo import MongoClient
 from pymongo.server_api import ServerApi
 
@@ -49,20 +48,26 @@ class EconomyCog(commands.Cog):
             collection.insert_one({"_id": user_id, "balance": balance})
         await ctx.send(f"{ctx.author.mention}, your current balance is {balance}.")
 
-    @commands.hybrid_command(name="leaderboard", help="Displays the top 10 users with the most money")
+    @commands.hybrid_command(name="leaderboard", help="Displays the leaderboard of all users")
+    @commands.cooldown(1, 30, commands.BucketType.user)
     async def leaderboard(self, ctx):
-        top_users = collection.find().sort("balance", -1).limit(10)  # Get top 10 users by balance
-        leaderboard = "Leaderboard:\n"
-        rank = 1
-        for user in top_users:
+        await ctx.defer()
+        users = collection.find({})
+        leaderboard = sorted(users, key=lambda x: x.get("balance", 0), reverse=True)
+
+        if not leaderboard:
+            await ctx.send("No users found in the economy system.")
+            return
+
+        leaderboard_message = "🏆 **Leaderboard** 🏆\n"
+        for index, user in enumerate(leaderboard, start=1):
             user_id = user["_id"]
             balance = user["balance"]
-            user_mention = f"<@{user_id}>"  # Format user ID as a mention
-            leaderboard += f"{rank}. {user_mention}: {balance} money\n"
-            rank += 1
-        if not leaderboard:
-            leaderboard = "No users found in the leaderboard."
-        await ctx.send(leaderboard)
+            member = ctx.guild.get_member(user_id)
+            username = member.name if member else f"<User ID: {user_id}>"
+            leaderboard_message += f"{index}. {username} - {balance} money\n"
+
+        await ctx.send(leaderboard_message)
 
 async def setup(bot):
     await bot.add_cog(EconomyCog(bot))

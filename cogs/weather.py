@@ -19,6 +19,7 @@ class WeatherCog(commands.Cog):
 
     @commands.hybrid_command(name="weather", help="Enter the name of the city")
     async def weather(self,ctx, city: str):
+        await ctx.defer()
         weather = get_quote(city)
         name = weather['location']['name']
         region = weather['location']['region']
@@ -40,7 +41,7 @@ class WeatherCog(commands.Cog):
         forecast3_maxtemp = weather['forecast']['forecastday'][2]['day']['maxtemp_c']
         forecast3_mintemp = weather['forecast']['forecastday'][2]['day']['mintemp_c']
         forecast3_rainchance = weather['forecast']['forecastday'][2]['day']['daily_chance_of_rain']
-        await ctx.channel.send("City: "+name+"\nRegion: " + region +     "\nCountry: " + country + "\nLocal Time: " + str(local_time) + "\nTemperature: " + str(temp)+"℃" + "\nCondition: "+ cond + "\nWind speed: "+str(wind_kph)+" kph"+"\nFeels like "+str(feelslike_c)+"℃"+"\nForecast:"+"\n"+str(date1)+": "+str(forecast1_maxtemp)+" ~ "+str(forecast1_mintemp)+", "+"Rain Chance: "+str(forecast1_rainchance)+"\n"+date2+": "+str(forecast2_maxtemp)+" ~ "+str(forecast2_mintemp)+", "+"Rain Chance: "+str(forecast2_rainchance)+"\n"+str(date3)+": "+str(forecast3_maxtemp)+" ~ "+str(forecast3_mintemp)+", "+"Rain Chance: "+str(forecast3_rainchance))
+        await ctx.send("City: "+name+"\nRegion: " + region +     "\nCountry: " + country + "\nLocal Time: " + str(local_time) + "\nTemperature: " + str(temp)+"℃" + "\nCondition: "+ cond + "\nWind speed: "+str(wind_kph)+" kph"+"\nFeels like "+str(feelslike_c)+"℃"+"\nForecast:"+"\n"+str(date1)+": "+str(forecast1_maxtemp)+" ~ "+str(forecast1_mintemp)+", "+"Rain Chance: "+str(forecast1_rainchance)+"\n"+date2+": "+str(forecast2_maxtemp)+" ~ "+str(forecast2_mintemp)+", "+"Rain Chance: "+str(forecast2_rainchance)+"\n"+str(date3)+": "+str(forecast3_maxtemp)+" ~ "+str(forecast3_mintemp)+", "+"Rain Chance: "+str(forecast3_rainchance))
 
 async def setup(bot):
     await bot.add_cog(WeatherCog(bot))

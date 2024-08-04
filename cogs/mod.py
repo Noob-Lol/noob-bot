@@ -18,6 +18,7 @@ class ModCog(commands.Cog):
             await ctx.channel.purge(limit=amount)
             await ctx.send(f'Purged {amount} messages.', ephemeral=True)
         else:
+            await ctx.defer()
             await ctx.message.delete()
             await ctx.channel.purge(limit=amount)
             await ctx.send(f'Purged {amount} messages.', delete_after=3)

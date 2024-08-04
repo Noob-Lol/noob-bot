@@ -13,7 +13,7 @@ counter = db['counter']
 # Send a ping to confirm a successful connection
 try:
     client.admin.command('ping')
-    print("Pinged your deployment. You successfully connected to MongoDB!")
+    print("You successfully connected to MongoDB!")
 except Exception as e:
     print(e)
 
@@ -34,7 +34,7 @@ async def add(ctx):
     result = counter.find_one_and_update({'_id': 'counter'}, {'$inc': {'count': 1}}, upsert=True)
     await ctx.send(f'Counter incremented to {result["count"]}')
 
-@bot.hybrid_command(name="hybrid")
+@bot.hybrid_command(name="hybrid", help="Hybrid test")
 async def hybrid_command(ctx: commands.Context):
     if ctx.interaction:
         await ctx.send("This is a slash command!")
