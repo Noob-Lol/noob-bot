@@ -4,13 +4,13 @@ from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 from dotenv import load_dotenv
 load_dotenv()
-script_path = os.path.abspath(os.path.dirname(__file__))
+script_path = os.path.dirname(__file__)
 TOKEN = os.environ["TOKEN"]
 uri = os.environ["MONGODB_URI"]
 client = MongoClient(uri, server_api=ServerApi('1'))
 db = client["discord_bot"]
 counter = db['counter']
-# Send a ping to confirm a successful connection
+
 try:
     client.admin.command('ping')
     print("You successfully connected to MongoDB!")
@@ -22,6 +22,7 @@ class Bot(commands.Bot):
         intents = discord.Intents.all()
         intents.message_content = True
         super().__init__(command_prefix = ">", intents = intents)
+        self.script_path = script_path
 
     async def on_command_error(self, ctx, error):
         await ctx.reply(error, ephemeral = True)
@@ -62,7 +63,7 @@ async def sync(ctx):
 @bot.event
 async def on_ready():
     await bot.change_presence(
-        activity=discord.Game('>help | bot by n01b'))
+        activity=discord.Game('>help'))
     for filename in os.listdir(f'{script_path}/cogs'):
         if filename.endswith('.py'):
             await bot.load_extension(f'cogs.{filename[:-3]}')
