@@ -13,7 +13,7 @@ counter = db['counter']
 
 try:
     client.admin.command('ping')
-    print("You successfully connected to MongoDB!")
+    print("Successfully connected to MongoDB!")
 except Exception as e:
     print(e)
 
@@ -23,6 +23,8 @@ class Bot(commands.Bot):
         intents.message_content = True
         super().__init__(command_prefix = ">", intents = intents)
         self.script_path = script_path
+        self.db = db
+        self.counter = counter
 
     async def on_command_error(self, ctx, error):
         await ctx.reply(error, ephemeral = True)
@@ -32,8 +34,10 @@ bot = Bot()
 @bot.hybrid_command(name="add", help="Adds one to the database")
 @commands.cooldown(1, 5, commands.BucketType.user)
 async def add(ctx):
-    result = counter.find_one_and_update({'_id': 'counter'}, {'$inc': {'count': 1}}, upsert=True)
-    await ctx.send(f'Counter incremented to {result["count"]}')
+    counter.find_one_and_update({'_id': 'counter'}, {'$inc': {'count': 1}}, upsert=True)
+    result = counter.find_one({'_id': 'counter'})
+    if result:
+        await ctx.send(f'Counter incremented to {result["count"]}')
 
 @bot.hybrid_command(name="hybrid", help="Hybrid test")
 async def hybrid_command(ctx: commands.Context):
@@ -45,10 +49,6 @@ async def hybrid_command(ctx: commands.Context):
 @bot.hybrid_command(name="hi", help="Says hello")
 async def hi(ctx):
     await ctx.send(f'Hello!')
-
-@bot.hybrid_command(name = "test", help = "Testing")
-async def test(ctx: commands.Context):
-    await ctx.reply("hi!", ephemeral=True)
 
 @bot.hybrid_command(name="ping", help="Sends the bot's latency.")
 async def ping(ctx):
