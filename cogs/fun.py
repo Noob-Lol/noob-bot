@@ -38,8 +38,11 @@ class FunCog(commands.Cog):
         await ctx.defer()
         with open(self.log_path, 'a') as f:
             f.write(f"prompt: {prompt}, seed: {seed}, width: {width}, height: {height}, steps: {steps}\n")
+        rand = True
+        if seed != 0:
+            rand = False
         result = await self.bot.loop.run_in_executor(None, self.gradio_client.predict,
-        prompt, seed, True, width, height, steps, "/infer")
+        prompt, seed, rand, width, height, steps, "/infer")
         image_path, seed = result
         if os.path.exists(image_path):
             await ctx.send(f'Generated image, seed: {seed}',file=discord.File(image_path))
