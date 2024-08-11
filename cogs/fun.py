@@ -6,6 +6,7 @@ class FunCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.gradio_client = Client("black-forest-labs/FLUX.1-schnell")
+        self.log_path = (f'{bot.script_path}/log.txt')
 
     @commands.hybrid_command(name="cat", help="Sends a random cat image")
     async def cat(self, ctx):
@@ -33,10 +34,12 @@ class FunCog(commands.Cog):
 
     @commands.hybrid_command(name="image", help="Generates an image")
     @commands.cooldown(1, 10, commands.BucketType.user)
-    async def image(self, ctx, *,prompt: str, seed: int = 0):
+    async def image(self, ctx, *, prompt: str, seed: int = 0, width: int = 512, height: int = 512, steps: int = 4):
         await ctx.defer()
+        with open(self.log_path, 'a') as f:
+            f.write(f"prompt: {prompt}, seed: {seed}, width: {width}, height: {height}, steps: {steps}\n")
         result = await self.bot.loop.run_in_executor(None, self.gradio_client.predict,
-        prompt, 0, True, 1024, 1024, 4, "/infer")
+        prompt, seed, True, width, height, steps, "/infer")
         image_path, seed = result
         if os.path.exists(image_path):
             await ctx.send(f'Generated image, seed: {seed}',file=discord.File(image_path))
