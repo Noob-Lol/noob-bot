@@ -1,26 +1,16 @@
-import discord, random, requests, os, time, asyncio
+import discord, random, requests, os, time
 from discord.ext import commands
 from discord import app_commands
 from gradio_client import Client
-HF_TOKEN = os.environ["HF_TOKEN"]
+
 class FunCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.log_path = (f'{bot.script_path}/log.txt')
+        self.merged = Client("multimodalart/FLUX.1-merged")
+        self.dev = Client("black-forest-labs/FLUX.1-dev")
+        #self.schnell = Client("black-forest-labs/FLUX.1-schnell")
         self.schnell = None
-        self.dev = None
-        self.bot.loop.create_task(self.init_clients())
-
-    async def init_clients(self):
-        try:
-            self.schnell = await asyncio.wait_for(self.create_client("black-forest-labs/FLUX.1-schnell"), timeout=30)
-            self.dev = await asyncio.wait_for(self.create_client("black-forest-labs/FLUX.1-dev"), timeout=30)
-        except asyncio.TimeoutError:
-            print("Client initialization timed out.")
-
-    async def create_client(self, model_name):
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, lambda: Client(model_name, HF_TOKEN))
 
     @commands.hybrid_command(name="cat", help="Sends a random cat image")
     async def cat(self, ctx):
@@ -48,23 +38,22 @@ class FunCog(commands.Cog):
 
     @commands.hybrid_command(name="image", help="Generates an image")
     @commands.cooldown(1, 10, commands.BucketType.user)
-    async def image(self, ctx, *, prompt: str, seed: int = 0, width: int = 1024, height: int = 1024, steps: int = 4, client: str = "schnell"):
+    async def image(self, ctx, *, prompt: str, seed: int = 0, width: int = 1024, height: int = 1024, steps: int = 4, client: str = "merged"):
         await ctx.defer()
         with open(self.log_path, 'a') as f:
             f.write(f"{ctx.author}, prompt: {prompt}, seed: {seed}, width: {width}, height: {height}, steps: {steps}, client: {client}\n")
         rand = True
         if seed != 0:
             rand = False
-        if not self.schnell or not self.dev:
-            await ctx.send("Clients are not initialized properly.")
-            return
         start_time = time.time()
-        if client == "schnell":
-            result = await self.bot.loop.run_in_executor(None, self.schnell.predict,prompt,seed,rand,width,height,steps,"/infer")
-        elif client == "dev":
+        if self.dev and client == "dev":
             result = await self.bot.loop.run_in_executor(None,self.dev.predict,prompt,seed,rand,width,height,3.5,steps,"/infer")
+        elif self.merged and client == "merged":
+            result = await self.bot.loop.run_in_executor(None,self.merged.predict,prompt,seed,rand,width,height,3.5,steps,"/infer")
+        elif self.schnell and client == "schnell":
+            result = await self.bot.loop.run_in_executor(None, self.schnell.predict,prompt,seed,rand,width,height,steps,"/infer")
         else:
-            await ctx.send("Invalid client. Please use 'schnell' or 'dev'.", delete_after=5)
+            await ctx.send("Error, available clients are 'dev' and 'merged', schnell is temporarily unavailable", delete_after=10)
             return
         image_path, seed = result
         if os.path.exists(image_path):
