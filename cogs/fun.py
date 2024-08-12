@@ -1,4 +1,4 @@
-import discord, random, requests, os, time
+import discord, random, requests, os, time, asyncio
 from discord.ext import commands
 from discord import app_commands
 from gradio_client import Client
@@ -7,17 +7,20 @@ class FunCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.log_path = (f'{bot.script_path}/log.txt')
-
         self.schnell = None
         self.dev = None
-        self.initialize_clients()
+        self.bot.loop.create_task(self.init_clients())
 
-    def initialize_clients(self):
+    async def init_clients(self):
         try:
-            self.schnell = Client("black-forest-labs/FLUX.1-schnell", HF_TOKEN)
-            self.dev = Client("black-forest-labs/FLUX.1-dev", HF_TOKEN)
-        except Exception as e:
-            print(f"Error initializing clients: {e}")
+            self.schnell = await asyncio.wait_for(self.create_client("black-forest-labs/FLUX.1-schnell"), timeout=30)
+            self.dev = await asyncio.wait_for(self.create_client("black-forest-labs/FLUX.1-dev"), timeout=30)
+        except asyncio.TimeoutError:
+            print("Client initialization timed out.")
+
+    async def create_client(self, model_name):
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, lambda: Client(model_name, HF_TOKEN))
 
     @commands.hybrid_command(name="cat", help="Sends a random cat image")
     async def cat(self, ctx):
