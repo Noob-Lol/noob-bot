@@ -1,11 +1,13 @@
-import discord, random, requests, os
+import discord, random, requests, os, time
 from discord.ext import commands
+from discord import app_commands
 from gradio_client import Client
 
 class FunCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.gradio_client = Client("black-forest-labs/FLUX.1-schnell")
+        self.schnell = Client("black-forest-labs/FLUX.1-schnell")
+        self.dev = Client("black-forest-labs/FLUX.1-dev")
         self.log_path = (f'{bot.script_path}/log.txt')
 
     @commands.hybrid_command(name="cat", help="Sends a random cat image")
@@ -24,9 +26,9 @@ class FunCog(commands.Cog):
     @commands.hybrid_command(name="random", help="Sends a random number")
     async def random(self, ctx, min: int|None, max: int|None):
         if min is None or max is None:
-            await ctx.send("Input two numbers")
+            await ctx.send("Input two numbers", delete_after=3)
         elif min == max:
-            await ctx.send("Numbers are equal")
+            await ctx.send("Numbers are equal", delete_after=3)
         else:
             if min > max:
                 min, max = max, min
@@ -34,18 +36,27 @@ class FunCog(commands.Cog):
 
     @commands.hybrid_command(name="image", help="Generates an image")
     @commands.cooldown(1, 10, commands.BucketType.user)
-    async def image(self, ctx, *, prompt: str, seed: int = 0, width: int = 512, height: int = 512, steps: int = 4):
+    async def image(self, ctx, *, prompt: str, seed: int = 0, width: int = 1024, height: int = 1024, steps: int = 4, client: str = "schnell"):
         await ctx.defer()
         with open(self.log_path, 'a') as f:
-            f.write(f"prompt: {prompt}, seed: {seed}, width: {width}, height: {height}, steps: {steps}\n")
+            f.write(f"{ctx.author}, prompt: {prompt}, seed: {seed}, width: {width}, height: {height}, steps: {steps}, client: {client}\n")
+        if client == "schnell":
+            client2 = self.schnell
+        elif client == "dev":
+            client2 = self.dev
+        else:
+            await ctx.send("Invalid client. Please use 'schnell' or 'dev'.", delete_after=3)
+            return
         rand = True
         if seed != 0:
             rand = False
-        result = await self.bot.loop.run_in_executor(None, self.gradio_client.predict,
+        start_time = time.time()
+        result = await self.bot.loop.run_in_executor(None, client2.predict,
         prompt, seed, rand, width, height, steps, "/infer")
         image_path, seed = result
         if os.path.exists(image_path):
-            await ctx.send(f'Generated image, seed: {seed}',file=discord.File(image_path))
+            gen_time = time.time() - start_time
+            await ctx.send(f'Generated image in {gen_time:.2f} seconds, seed: {seed}',file=discord.File(image_path))
             try:
                 os.remove(image_path)
                 folder = os.path.dirname(image_path)

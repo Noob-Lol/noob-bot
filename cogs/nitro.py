@@ -15,9 +15,7 @@ class NitroCog(commands.Cog):
             with open(self.file_path, "w") as file:
                 file.writelines(lines[1:])
             self.nitro_db.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': 1}}, upsert=True)
-            count = self.nitro_db.find_one({'_id': 'nitro_counter'})
-            if count:
-                await ctx.send(f'Here is your nitro! :arrow_down:   Total nitro used: **{count["count"]}** \n{first_line}')
+            await ctx.send(first_line)
         else:
             await ctx.send("No nitro codes left.")
 
