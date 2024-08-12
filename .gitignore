@@ -2,3 +2,4 @@
 .env.backup
 __pycache__
 nitro.txt
+log.txt

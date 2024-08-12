@@ -7,6 +7,7 @@ class FunCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.schnell = Client("black-forest-labs/FLUX.1-schnell", HF_TOKEN)
+        time.sleep(3)
         self.dev = Client("black-forest-labs/FLUX.1-dev", HF_TOKEN)
         self.log_path = (f'{bot.script_path}/log.txt')
 
