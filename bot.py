@@ -56,9 +56,10 @@ async def ping(ctx):
 
 @bot.command(name= 'sync', help="Syncs commands")
 @commands.is_owner()
-async def sync(ctx):         
+async def sync(ctx):
+    await ctx.message.delete()         
     await bot.tree.sync()      
-    await ctx.send("Synced!")
+    await ctx.send("Synced!", delete_after=3)
 
 @bot.event
 async def on_ready():

@@ -40,19 +40,17 @@ class FunCog(commands.Cog):
         await ctx.defer()
         with open(self.log_path, 'a') as f:
             f.write(f"{ctx.author}, prompt: {prompt}, seed: {seed}, width: {width}, height: {height}, steps: {steps}, client: {client}\n")
-        if client == "schnell":
-            client2 = self.schnell
-        elif client == "dev":
-            client2 = self.dev
-        else:
-            await ctx.send("Invalid client. Please use 'schnell' or 'dev'.", delete_after=3)
-            return
         rand = True
         if seed != 0:
             rand = False
         start_time = time.time()
-        result = await self.bot.loop.run_in_executor(None, client2.predict,
-        prompt, seed, rand, width, height, steps, "/infer")
+        if client == "schnell":
+            result = await self.bot.loop.run_in_executor(None, self.schnell.predict,prompt,seed,rand,width,height,steps,"/infer")
+        elif client == "dev":
+            result = await self.bot.loop.run_in_executor(None,self.dev.predict,prompt,seed,rand,width,height,3.5,steps,"/infer")
+        else:
+            await ctx.send("Invalid client. Please use 'schnell' or 'dev'.", delete_after=5)
+            return
         image_path, seed = result
         if os.path.exists(image_path):
             gen_time = time.time() - start_time
