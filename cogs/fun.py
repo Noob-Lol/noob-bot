@@ -6,10 +6,18 @@ HF_TOKEN = os.environ["HF_TOKEN"]
 class FunCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.schnell = Client("black-forest-labs/FLUX.1-schnell", HF_TOKEN)
-        time.sleep(3)
-        self.dev = Client("black-forest-labs/FLUX.1-dev", HF_TOKEN)
         self.log_path = (f'{bot.script_path}/log.txt')
+
+        self.schnell = None
+        self.dev = None
+        self.initialize_clients()
+
+    def initialize_clients(self):
+        try:
+            self.schnell = Client("black-forest-labs/FLUX.1-schnell", HF_TOKEN)
+            self.dev = Client("black-forest-labs/FLUX.1-dev", HF_TOKEN)
+        except Exception as e:
+            print(f"Error initializing clients: {e}")
 
     @commands.hybrid_command(name="cat", help="Sends a random cat image")
     async def cat(self, ctx):
@@ -44,6 +52,9 @@ class FunCog(commands.Cog):
         rand = True
         if seed != 0:
             rand = False
+        if not self.schnell or not self.dev:
+            await ctx.send("Clients are not initialized properly.")
+            return
         start_time = time.time()
         if client == "schnell":
             result = await self.bot.loop.run_in_executor(None, self.schnell.predict,prompt,seed,rand,width,height,steps,"/infer")
