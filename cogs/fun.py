@@ -7,10 +7,21 @@ class FunCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.log_path = (f'{bot.script_path}/log.txt')
-        self.merged = Client("multimodalart/FLUX.1-merged")
-        self.dev = Client("black-forest-labs/FLUX.1-dev")
-        #self.schnell = Client("black-forest-labs/FLUX.1-schnell")
-        self.schnell = None
+        try:
+            self.merged = Client("multimodalart/FLUX.1-merged")
+        except Exception as e:
+            print(e)
+            self.merged = None
+        try:
+            self.dev = Client("black-forest-labs/FLUX.1-dev")
+        except Exception as e:
+            print(e)
+            self.dev = None
+        try:
+            self.schnell = Client("black-forest-labs/FLUX.1-schnell")
+        except Exception as e:
+            print(e)
+            self.schnell = None
 
     @commands.hybrid_command(name="cat", help="Sends a random cat image")
     async def cat(self, ctx):
@@ -38,7 +49,7 @@ class FunCog(commands.Cog):
 
     @commands.hybrid_command(name="image", help="Generates an image")
     @commands.cooldown(1, 10, commands.BucketType.user)
-    async def image(self, ctx, *, prompt: str, seed: int = 0, width: int = 1024, height: int = 1024, steps: int = 4, client: str = "merged"):
+    async def image(self, ctx, *, prompt: str, seed: int = 0, width: int = 1024, height: int = 1024, steps: int = 4, client: str = "schnell"):
         await ctx.defer()
         with open(self.log_path, 'a') as f:
             f.write(f"{ctx.author}, prompt: {prompt}, seed: {seed}, width: {width}, height: {height}, steps: {steps}, client: {client}\n")
@@ -53,7 +64,7 @@ class FunCog(commands.Cog):
         elif self.schnell and client == "schnell":
             result = await self.bot.loop.run_in_executor(None, self.schnell.predict,prompt,seed,rand,width,height,steps,"/infer")
         else:
-            await ctx.send("Error, available clients are 'dev' and 'merged', schnell is temporarily unavailable", delete_after=10)
+            await ctx.send("Error, available clients are 'schnell', 'dev' and 'merged'", delete_after=10)
             return
         image_path, seed = result
         if os.path.exists(image_path):
