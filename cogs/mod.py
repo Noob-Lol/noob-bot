@@ -23,6 +23,24 @@ class ModCog(commands.Cog):
             await ctx.channel.purge(limit=amount)
             await ctx.send(f'Purged {amount} messages.', delete_after=3)
 
+    @commands.hybrid_command(name='cleanup', help="Cleans up messages")
+    @commands.has_permissions(manage_messages=True)
+    async def cleanup(self, ctx, msg_limit: int):
+        await ctx.defer(ephemeral=True)
+        if not ctx.interaction:
+            await ctx.message.delete()
+        if msg_limit <= 0:
+            await ctx.send("Please specify a number greater than 0.", delete_after=3)
+            return
+        deleted_count = 0
+        async for message in ctx.channel.history(limit=200):
+            if message.author == self.bot.user:
+                await message.delete()
+                deleted_count += 1
+                if deleted_count >= msg_limit:
+                    break
+        await ctx.send(f"Deleted {deleted_count} messages sent by the bot.", delete_after=3)
+
     @commands.hybrid_command(name="ban", with_app_command = True, help="Bans a user")
     @commands.has_permissions(ban_members=True)
     async def ban(self,ctx, member: discord.Member, *, reason=None):
