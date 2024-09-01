@@ -1,8 +1,8 @@
 import discord, random, requests, os, time
 from discord.ext import commands
-from discord import app_commands
 from gradio_client import Client
 
+banned_words = ['gay', "sex", 'nigg', 'porn']
 class FunCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -53,6 +53,9 @@ class FunCog(commands.Cog):
         await ctx.defer()
         with open(self.log_path, 'a') as f:
             f.write(f"{ctx.author}, prompt: {prompt}, seed: {seed}, width: {width}, height: {height}, steps: {steps}, client: {client}\n")
+        if any(word in prompt.lower() for word in banned_words):
+            await ctx.send("Banned word used, you may get banned.")
+            return
         rand = True
         if seed != 0:
             rand = False
