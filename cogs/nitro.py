@@ -1,7 +1,5 @@
 import discord, os, time, datetime
 from discord.ext import commands, tasks
-CHANNEL_ID = 1282133552699277342
-MESSAGE_ID = 1282133957239902249
 
 class NitroCog(commands.Cog):
     def __init__(self, bot):
@@ -9,6 +7,7 @@ class NitroCog(commands.Cog):
         self.bot_path = bot.script_path
         self.file_path = (f'{self.bot_path}/nitro.txt')
         self.nitro_db = bot.counter
+        self.embed_settings = bot.db['embed_settings']
         self.update_embed.start()
 
     @commands.hybrid_command(name="nitro", help="Sends a free nitro link")
@@ -30,22 +29,60 @@ class NitroCog(commands.Cog):
 
     @tasks.loop(minutes=5)
     async def update_embed(self):
-        channel = self.bot.get_channel(CHANNEL_ID)
-        if isinstance(channel, discord.TextChannel):
-            message = await channel.fetch_message(MESSAGE_ID)
-        else:
+        settings = self.embed_settings.find()
+        for setting in settings:
+            guild_id = setting['guild_id']
+            channel_id = setting['channel_id']
+            message_id = setting['message_id']
+            channel = self.bot.get_channel(channel_id)
+            if channel:
+                count = self.nitro_db.find_one({'_id': 'nitro_counter'})['count']
+                with open(self.file_path, 'r') as f:
+                    nitro_count=sum(1 for _ in f)
+                embed = discord.Embed(title="Bot Status", description="Online 24/7, hosted somewhere...", color=discord.Color.random(), timestamp = datetime.datetime.now())
+                embed.add_field(name="Servers", value=f"{len(self.bot.guilds)}")
+                embed.add_field(name="Users", value=f"{len(self.bot.users)}")
+                embed.add_field(name="Ping", value=f"{round (self.bot.latency * 1000)} ms")
+                embed.add_field(name="Nitro stock", value=f"{nitro_count}")
+                embed.add_field(name="Nitro given", value=f"{count}")
+                embed.set_footer(text="coded by n01b")
+                try:
+                    message = await channel.fetch_message(message_id)
+                    await message.edit(embed=embed)
+                except discord.NotFound:
+                    self.embed_settings.delete_one({'guild_id': guild_id})
+
+    @commands.command(name="embe", help="Enable embed updates in the current channel.")
+    @commands.is_owner()
+    async def enable_embed(self, ctx):
+        await ctx.message.delete()
+        existing_entry = self.embed_settings.find_one({'guild_id': ctx.guild.id})
+        if existing_entry:
+            await ctx.send("Embed updates are already enabled in this channel.", delete_after=5)
             return
-        count = self.nitro_db.find_one({'_id': 'nitro_counter'})['count']
-        with open(self.file_path, 'r') as f:
-            nitro_count=sum(1 for _ in f)
-        embed = discord.Embed(title="Bot Status", description="Online 24/7, hosted somewhere...", color=discord.Color.random(), timestamp = datetime.datetime.now())
-        embed.add_field(name="Servers", value=f"{len(self.bot.guilds)}")
-        embed.add_field(name="Users", value=f"{len(self.bot.users)}")
-        embed.add_field(name="Ping", value=f"{round (self.bot.latency * 1000)} ms")
-        embed.add_field(name="Nitro stock", value=f"{nitro_count}")
-        embed.add_field(name="Nitro given", value=f"{count}")
-        embed.set_footer(text="coded by n01b")
-        await message.edit(embed=embed)
+        embed = discord.Embed(
+            title="Bot Status",
+            description="Embed updates enabled.",
+            color=discord.Color.green()
+        )
+        message = await ctx.send(embed=embed)
+        self.embed_settings.insert_one({
+            'guild_id': ctx.guild.id,
+            'channel_id': ctx.channel.id,
+            'message_id': message.id
+        })
+        await ctx.send(f"Embed updates enabled in {ctx.channel.mention}!", delete_after=5)
+
+    @commands.hybrid_command(name="embd", help="Disable embed updates in the current channel.")
+    @commands.is_owner()
+    async def disable_embed(self,ctx):
+        await ctx.message.delete()
+        existing_entry = self.embed_settings.find_one({'guild_id': ctx.guild.id})
+        if not existing_entry:
+            await ctx.send("Embed updates are not enabled in this channel.", delete_after=5)
+            return
+        self.embed_settings.delete_one({'guild_id': ctx.guild.id})
+        await ctx.send(f"Embed updates disabled in {ctx.channel.mention}.", delete_after=5)
 
 async def setup(bot):
     await bot.add_cog(NitroCog(bot))
