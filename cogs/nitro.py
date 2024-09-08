@@ -1,4 +1,4 @@
-import discord, os, time, datetime
+import discord, os, datetime
 from discord.ext import commands, tasks
 
 class NitroCog(commands.Cog):

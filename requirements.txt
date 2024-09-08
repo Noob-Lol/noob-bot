@@ -1,4 +1,5 @@
 discord-py
 python-dotenv
-pymongo[srv]
+pymongo
 requests
+gradio_client

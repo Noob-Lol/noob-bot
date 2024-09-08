@@ -1,4 +1,4 @@
-import discord, os, json, requests
+import discord, os
 from discord.ext import commands
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi

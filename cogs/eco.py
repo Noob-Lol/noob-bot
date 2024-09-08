@@ -1,9 +1,5 @@
-import discord
+import discord, random
 from discord.ext import commands
-import random, os
-from pymongo import MongoClient
-from pymongo.server_api import ServerApi
-
 
 class EconomyCog(commands.Cog):
     def __init__(self, bot):
@@ -22,9 +18,7 @@ class EconomyCog(commands.Cog):
         else:
             new_balance = amount
             self.collection.insert_one({"_id": user_id, "balance": new_balance})
-
         await ctx.send(f"{ctx.author.mention}, you have been given {amount} money! Your new balance is {new_balance}.")
-
 
     @commands.hybrid_command(name="set_money", help="Sets the user's money to a specific amount")
     @commands.has_permissions(administrator=True)
@@ -32,7 +26,6 @@ class EconomyCog(commands.Cog):
         user_id = user.id
         self.collection.update_one({"_id": user_id}, {"$set": {"balance": amount}}, upsert=True)
         await ctx.send(f"{user.mention}'s balance has been set to {amount}.")
-
 
     @commands.hybrid_command(name="balance", help="Displays your current balance")
     async def balance(self, ctx):
@@ -51,11 +44,9 @@ class EconomyCog(commands.Cog):
         await ctx.defer()
         users = self.collection.find({})
         leaderboard = sorted(users, key=lambda x: x.get("balance", 0), reverse=True)
-
         if not leaderboard:
             await ctx.send("No users found in the economy system.")
             return
-
         leaderboard_message = "🏆 **Leaderboard** 🏆\n"
         for index, user in enumerate(leaderboard, start=1):
             user_id = user["_id"]
@@ -63,7 +54,6 @@ class EconomyCog(commands.Cog):
             member = ctx.guild.get_member(user_id)
             username = member.name if member else f"<User ID: {user_id}>"
             leaderboard_message += f"{index}. {username} - {balance} money\n"
-
         await ctx.send(leaderboard_message)
 
 async def setup(bot):

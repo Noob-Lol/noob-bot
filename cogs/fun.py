@@ -1,4 +1,4 @@
-import discord, random, requests, os, time
+import discord, random, requests, os, time, datetime
 from discord.ext import commands
 from gradio_client import Client
 
@@ -48,13 +48,15 @@ class FunCog(commands.Cog):
             await ctx.send(f"**{ctx.author.name}** rolled a **{random.randint(min, max)}**")
 
     @commands.hybrid_command(name="image", help="Generates an image")
-    @commands.cooldown(1, 10, commands.BucketType.user)
+    @commands.cooldown(1, 30, commands.BucketType.user)
     async def image(self, ctx, *, prompt: str, seed: int = 0, width: int = 1024, height: int = 1024, steps: int = 4, client: str = "schnell"):
         await ctx.defer()
         with open(self.log_path, 'a') as f:
             f.write(f"{ctx.author}, prompt: {prompt}, seed: {seed}, width: {width}, height: {height}, steps: {steps}, client: {client}\n")
         if any(word in prompt.lower() for word in banned_words):
-            await ctx.send("Banned word used, you may get banned.")
+            duration = datetime.timedelta(seconds=120)
+            await ctx.author.timeout(duration,reason="Banned word used")
+            await ctx.send("Banned word used, you have been timed out.")
             return
         rand = True
         if seed != 0:
