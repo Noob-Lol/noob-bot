@@ -2,7 +2,7 @@ import discord, random, requests, os, time
 from discord.ext import commands
 from gradio_client import Client
 
-banned_words = ['gay', "sex", 'nigg', 'porn']
+banned_words = ['gay', "sex", 'nigg', 'porn', 'nude']
 class FunCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
