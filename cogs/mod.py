@@ -1,4 +1,4 @@
-import discord
+import discord, datetime
 from discord.ext import commands
 
 class ModCog(commands.Cog):
@@ -64,6 +64,30 @@ class ModCog(commands.Cog):
         if not ctx.interaction:
             await ctx.message.delete()
         await ctx.send(f'**{member.name}** has been kicked, Reason: {reason}')
+
+    @commands.hybrid_command(name="timeout", help="Timeouts a user")
+    @commands.has_permissions(ban_members=True)
+    async def timeout(self,ctx, member: discord.Member, time: int, *, reason=None):
+        await member.timeout(datetime.timedelta(seconds=time), reason=reason)
+        if not ctx.interaction:
+            await ctx.message.delete()
+        await ctx.send(f'**{member.name}** has been timed out, Reason: {reason}')
+
+    @commands.hybrid_command(name="lock", help="Locks a channel")
+    @commands.has_permissions(manage_channels=True)
+    async def lock(self, ctx, channel: discord.TextChannel):
+        await channel.set_permissions(ctx.guild.default_role, send_messages=False)
+        if not ctx.interaction:
+            await ctx.message.delete()
+        await ctx.send(f"Locked {channel.mention}", delete_after=3)
+
+    @commands.hybrid_command(name="unlock", help="Unlocks a channel")
+    @commands.has_permissions(manage_channels=True)
+    async def unlock(self, ctx, channel: discord.TextChannel):
+        await channel.set_permissions(ctx.guild.default_role, send_messages=True)
+        if not ctx.interaction:
+            await ctx.message.delete()
+        await ctx.send(f"Unlocked {channel.mention}", delete_after=3)
 
 async def setup(bot):
     await bot.add_cog(ModCog(bot))
