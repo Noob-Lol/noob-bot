@@ -36,7 +36,7 @@ async def check_guild(ctx):
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CheckFailure):
         if ctx.guild is None:
-            await ctx.send("Sorry, the commands are not available in DMs.")
+            await ctx.send("You can't use commands in DMs.")
         return
     await ctx.reply(error, ephemeral = True)
 
@@ -54,10 +54,6 @@ async def hybrid_command(ctx: commands.Context):
         await ctx.send("This is a slash command!")
     else:
         await ctx.send("This is a regular command!")
-
-@bot.hybrid_command(name="hi", help="Says hello")
-async def hi(ctx):
-    await ctx.send(f'Hello!')
 
 @bot.hybrid_command(name="ping", help="Sends the bot's latency.")
 async def ping(ctx):
