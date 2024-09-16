@@ -26,10 +26,15 @@ class Bot(commands.Bot):
         self.db = db
         self.counter = counter
 
-    async def on_command_error(self, ctx, error):
-        await ctx.reply(error, ephemeral = True)
-
 bot = Bot()
+
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CheckFailure):
+        if ctx.guild is None:
+            await ctx.send("Sorry, the commands are not available in DMs.")
+        return
+    await ctx.reply(error, ephemeral = True)
 
 @bot.hybrid_command(name="add", help="Adds one to the database")
 @commands.cooldown(1, 5, commands.BucketType.user)
@@ -63,8 +68,7 @@ async def sync(ctx):
 
 @bot.event
 async def on_ready():
-    await bot.change_presence(
-        activity=discord.Game('>help'))
+    await bot.change_presence(activity=discord.Game('>help'))
     for filename in os.listdir(f'{script_path}/cogs'):
         if filename.endswith('.py'):
             await bot.load_extension(f'cogs.{filename[:-3]}')

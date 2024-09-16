@@ -5,7 +5,6 @@ class NitroCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.bot_path = bot.script_path
-        self.file_path = (f'{self.bot_path}/nitro.txt')
         self.nitro_db = bot.counter
         self.embed_settings = bot.db['embed_settings']
         self.update_embed.start()
@@ -14,15 +13,17 @@ class NitroCog(commands.Cog):
     @commands.cooldown(1, 5, commands.BucketType.user)
     async def nitro(self, ctx):
         if os.path.exists(f'{self.bot_path}/lock.txt'):
-            await ctx.send('More nitro codes are being added, please retry later.', delete_after=5)
+            await ctx.send('The bot is in maintenance, please retry later.', delete_after=5)
             return
-        with open(self.file_path, "r") as file:
+        with open(f'{self.bot_path}/nitro.txt', "r") as file:
             lines = file.readlines()
         if lines:
             first_line = lines[0].strip()
-            with open(self.file_path, "w") as file:
+            with open(f'{self.bot_path}/nitro.txt', "w") as file:
                 file.writelines(lines[1:])
             self.nitro_db.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': 1}}, upsert=True)
+            with open(f'{self.bot_path}/nitro_log.txt', 'a') as file:
+                file.write(f'{ctx.author.name} used nitro code: {first_line}\n')
             await ctx.send(first_line)
         else:
             await ctx.send("No nitro codes left.")
@@ -38,7 +39,7 @@ class NitroCog(commands.Cog):
                 channel = self.bot.get_channel(channel_id)
                 if channel:
                     count = self.nitro_db.find_one({'_id': 'nitro_counter'})['count']
-                    with open(self.file_path, 'r') as f:
+                    with open(f'{self.bot_path}/nitro.txt', 'r') as f:
                         nitro_count=sum(1 for _ in f)
                     embed = discord.Embed(title="Bot Status", description="Online 24/7, hosted somewhere...", color=discord.Color.random(), timestamp = datetime.datetime.now())
                     embed.add_field(name="Servers", value=f"{len(self.bot.guilds)}")
