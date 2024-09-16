@@ -28,6 +28,10 @@ class Bot(commands.Bot):
 
 bot = Bot()
 
+@bot.check
+async def check_guild(ctx):
+    return ctx.guild
+
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CheckFailure):
