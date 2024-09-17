@@ -1,4 +1,4 @@
-import discord, datetime
+import discord, datetime, asyncio
 from discord.ext import commands
 
 class ModCog(commands.Cog):
@@ -39,9 +39,10 @@ class ModCog(commands.Cog):
             if message.author == self.bot.user:
                 await message.delete()
                 deleted_count += 1
+                await asyncio.sleep(0.2)
                 if deleted_count >= msg_limit:
                     break
-        if not ctx.interaction:
+        if ctx.interaction:
             await ctx.send(f"Deleted {deleted_count} messages sent by the bot.", ephemeral=True)
         else:
             await ctx.send(f"Deleted {deleted_count} messages sent by the bot.", delete_after=3)
