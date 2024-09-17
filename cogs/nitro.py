@@ -10,7 +10,7 @@ class NitroCog(commands.Cog):
         self.update_embed.start()
 
     @commands.hybrid_command(name="nitro", help="Sends a free nitro link")
-    @commands.cooldown(1, 60, commands.BucketType.user)
+    @commands.cooldown(1, 5, commands.BucketType.user)
     async def nitro(self, ctx):
         if os.path.exists(f'{self.bot_path}/lock.txt'):
             await ctx.send('The bot is in maintenance, please retry later.', delete_after=5)
@@ -26,7 +26,7 @@ class NitroCog(commands.Cog):
                 file.write(f'{ctx.author.name} used nitro code: {first_line}\n')
             await ctx.send(first_line)
         else:
-            await ctx.send("No nitro codes left.")
+            await ctx.send("No nitro codes left.", delete_after=10)
 
     @tasks.loop(minutes=5)
     async def update_embed(self):
