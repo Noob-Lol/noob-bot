@@ -65,11 +65,7 @@ class NitroCog(commands.Cog):
         if existing_entry:
             await ctx.send("Embed updates are already enabled in this channel.", delete_after=5)
             return
-        embed = discord.Embed(
-            title="Bot Status",
-            description="Embed updates enabled.",
-            color=discord.Color.green()
-        )
+        embed = discord.Embed(title="Enabled embed updates", description="The main content will be here soon.", color=discord.Color.green())
         message = await ctx.send(embed=embed)
         self.embed_settings.insert_one({
             'guild_id': ctx.guild.id,

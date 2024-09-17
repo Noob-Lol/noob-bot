@@ -32,8 +32,10 @@ class ModCog(commands.Cog):
         if msg_limit <= 0:
             await ctx.send("Please specify a number greater than 0.", delete_after=3)
             return
+        elif msg_limit > 50:
+            msg_limit = 50
         deleted_count = 0
-        async for message in ctx.channel.history(limit=200):
+        async for message in ctx.channel.history(limit=50):
             if message.author == self.bot.user:
                 await message.delete()
                 deleted_count += 1
