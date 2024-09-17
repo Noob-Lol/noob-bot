@@ -41,7 +41,10 @@ class ModCog(commands.Cog):
                 deleted_count += 1
                 if deleted_count >= msg_limit:
                     break
-        await ctx.send(f"Deleted {deleted_count} messages sent by the bot.", delete_after=3)
+        if not ctx.interaction:
+            await ctx.send(f"Deleted {deleted_count} messages sent by the bot.", ephemeral=True)
+        else:
+            await ctx.send(f"Deleted {deleted_count} messages sent by the bot.", delete_after=3)
 
     @commands.hybrid_command(name="ban", with_app_command = True, help="Bans a user")
     @commands.has_permissions(ban_members=True)
