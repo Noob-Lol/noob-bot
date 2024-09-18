@@ -68,10 +68,17 @@ async def sync(ctx):
 
 @bot.event
 async def on_ready():
-    await bot.change_presence(activity=discord.Game('>help'))
+    await bot.change_presence(activity=discord.CustomActivity(name='im cool 😎, ">" prefix'))
     for filename in os.listdir(f'{script_path}/cogs'):
         if filename.endswith('.py'):
             await bot.load_extension(f'cogs.{filename[:-3]}')
     print(f'Logged in as {bot.user}')
 
-bot.run(TOKEN)
+try:
+    bot.run(TOKEN)
+except discord.HTTPException as e:
+    if e.status == 429:
+        print('Rate limited!')
+        os.system('kill 1')
+    else:
+        raise e

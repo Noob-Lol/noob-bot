@@ -1,5 +1,6 @@
 import discord, random, requests, os, time, datetime
 from discord.ext import commands
+from discord import app_commands
 from gradio_client import Client
 
 banned_words = ['gay', "sex", 'nigg', 'porn', 'nude']
@@ -26,10 +27,6 @@ class FunCog(commands.Cog):
     @commands.hybrid_command(name="cat", help="Sends a random cat image")
     async def cat(self, ctx):
         await ctx.send(requests.get("https://api.thecatapi.com/v1/images/search").json()[0]["url"])
-    
-    @commands.hybrid_command(name="joke", help="Sends a joke")
-    async def joke(self, ctx):
-        await ctx.send('your fatherless')
 
     @commands.hybrid_command(name="flip", help="Flips a coin")
     async def flip(self, ctx):
@@ -49,10 +46,17 @@ class FunCog(commands.Cog):
 
     @commands.hybrid_command(name="image", help="Generates an image")
     @commands.cooldown(1, 30, commands.BucketType.user)
-    async def image(self, ctx, *, prompt: str, seed: int = 0, width: int = 1024, height: int = 1024, steps: int = 4, client: str = "schnell"):
+    @app_commands.describe(prompt="A prompt for the image", seed="default=random", width="default=1024", height="default=1024", guidance_scale="default=3.5, not used by schnell",steps="default=4", model="default=schnell")
+    @app_commands.choices(
+        model=[
+            app_commands.Choice(name="schnell", value="schnell"),
+            app_commands.Choice(name="merged", value="merged"),
+            app_commands.Choice(name="dev", value="dev")
+        ])
+    async def image(self, ctx, *, prompt: str, seed: int = 0, width: int = 1024, height: int = 1024, guidance_scale: float = 3.5, steps: int = 4, model: str = "schnell"):
         await ctx.defer()
         with open(self.log_path, 'a') as f:
-            f.write(f"{ctx.author}, prompt: {prompt}, seed: {seed}, width: {width}, height: {height}, steps: {steps}, client: {client}\n")
+            f.write(f"{ctx.author}, prompt: {prompt}, seed: {seed}, width: {width}, height: {height}, guidance_scale: {guidance_scale},steps: {steps}, model: {model}\n")
         if any(word in prompt.lower() for word in banned_words):
             duration = datetime.timedelta(seconds=120)
             await ctx.author.timeout(duration,reason="Banned word used")
@@ -62,14 +66,14 @@ class FunCog(commands.Cog):
         if seed != 0:
             rand = False
         start_time = time.time()
-        if self.dev and client == "dev":
-            result = await self.bot.loop.run_in_executor(None,self.dev.predict,prompt,seed,rand,width,height,3.5,steps,"/infer")
-        elif self.merged and client == "merged":
-            result = await self.bot.loop.run_in_executor(None,self.merged.predict,prompt,seed,rand,width,height,3.5,steps,"/infer")
-        elif self.schnell and client == "schnell":
+        if self.dev and model == "dev":
+            result = await self.bot.loop.run_in_executor(None,self.dev.predict,prompt,seed,rand,width,height,guidance_scale,steps,"/infer")
+        elif self.merged and model == "merged":
+            result = await self.bot.loop.run_in_executor(None,self.merged.predict,prompt,seed,rand,width,height,guidance_scale,steps,"/infer")
+        elif self.schnell and model == "schnell":
             result = await self.bot.loop.run_in_executor(None, self.schnell.predict,prompt,seed,rand,width,height,steps,"/infer")
         else:
-            await ctx.send("Error, available clients are 'schnell', 'dev' and 'merged'", delete_after=10)
+            await ctx.send("Error, this model failed to load.", delete_after=10)
             return
         image_path, seed = result
         if os.path.exists(image_path):

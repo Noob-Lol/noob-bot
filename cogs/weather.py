@@ -1,5 +1,6 @@
 import json, requests
 from discord.ext import commands
+from discord import app_commands
 
 def get_quote(city):
         url = "https://weatherapi-com.p.rapidapi.com/forecast.json"
@@ -17,7 +18,8 @@ class WeatherCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.hybrid_command(name="weather", help="Enter the name of the city")
+    @commands.hybrid_command(name="weather", help="Sends the weather for a city")
+    @app_commands.describe(city="The city to get the weather for")
     async def weather(self,ctx, city: str):
         await ctx.defer()
         weather = get_quote(city)

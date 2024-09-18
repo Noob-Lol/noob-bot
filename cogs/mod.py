@@ -1,5 +1,6 @@
-import discord, datetime, asyncio
+import discord, datetime
 from discord.ext import commands
+from discord import app_commands
 
 class ModCog(commands.Cog):
     def __init__(self, bot):
@@ -12,6 +13,7 @@ class ModCog(commands.Cog):
 
     @commands.hybrid_command(name="purge", help="Purges messages")
     @commands.has_permissions(manage_messages=True)
+    @app_commands.describe(amount="The number of messages to purge")
     async def purge(self, ctx, amount: int):
         if ctx.interaction:
             await ctx.defer(ephemeral=True)
@@ -23,32 +25,28 @@ class ModCog(commands.Cog):
             await ctx.channel.purge(limit=amount)
             await ctx.send(f'Purged {amount} messages.', delete_after=3)
 
-    @commands.hybrid_command(name='cleanup', help="Cleans up messages")
+    @commands.command(name='cleanup', help="Cleans up messages")
     @commands.has_permissions(manage_messages=True)
+    @app_commands.describe(msg_limit="The number of messages from the bot to delete")
     async def cleanup(self, ctx, msg_limit: int):
-        await ctx.defer(ephemeral=True)
-        if not ctx.interaction:
-            await ctx.message.delete()
+        await ctx.message.delete()
         if msg_limit <= 0:
             await ctx.send("Please specify a number greater than 0.", delete_after=3)
             return
         elif msg_limit > 50:
             msg_limit = 50
-        deleted_count = 0
-        async for message in ctx.channel.history(limit=50):
+        deleted = 0
+        async for message in ctx.channel.history(limit=200):
             if message.author == self.bot.user:
                 await message.delete()
-                deleted_count += 1
-                await asyncio.sleep(0.2)
-                if deleted_count >= msg_limit:
+                deleted += 1
+                if deleted >= msg_limit:
                     break
-        if ctx.interaction:
-            await ctx.send(f"Deleted {deleted_count} messages sent by the bot.", ephemeral=True)
-        else:
-            await ctx.send(f"Deleted {deleted_count} messages sent by the bot.", delete_after=3)
+        await ctx.send(f"Deleted {deleted} bot messages.", delete_after=5)
 
-    @commands.hybrid_command(name="ban", with_app_command = True, help="Bans a user")
+    @commands.hybrid_command(name="ban", help="Bans a user")
     @commands.has_permissions(ban_members=True)
+    @app_commands.describe(member="The user to ban",reason="The reason for the ban")
     async def ban(self,ctx, member: discord.Member, *, reason=None):
         await member.ban(reason=reason)
         if not ctx.interaction:
@@ -57,6 +55,7 @@ class ModCog(commands.Cog):
 
     @commands.hybrid_command(name="unban", help="Unbans a user")
     @commands.has_permissions(ban_members=True)
+    @app_commands.describe(member_id="The ID of the user to unban")
     async def unban(self,ctx, *, member_id):
         await ctx.guild.unban(discord.Object(id=member_id))
         if not ctx.interaction:

@@ -38,12 +38,12 @@ class EconomyCog(commands.Cog):
             self.collection.insert_one({"_id": user_id, "balance": balance})
         await ctx.send(f"{ctx.author.mention}, your current balance is {balance}.")
 
-    @commands.hybrid_command(name="leaderboard", help="Displays the leaderboard of all users")
+    @commands.hybrid_command(name="leaderboard", help="Displays the leaderboard of top users")
     @commands.cooldown(1, 30, commands.BucketType.user)
     async def leaderboard(self, ctx):
         await ctx.defer()
         users = self.collection.find({})
-        leaderboard = sorted(users, key=lambda x: x.get("balance", 0), reverse=True)
+        leaderboard = sorted(users, key=lambda x: x.get("balance", 0), reverse=True)[:10]
         if not leaderboard:
             await ctx.send("No users found in the economy system.")
             return
