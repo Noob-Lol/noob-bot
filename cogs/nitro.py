@@ -82,8 +82,11 @@ class NitroCog(commands.Cog):
         if not existing_entry:
             await ctx.send("Embed updates are not enabled in this channel.", delete_after=5)
             return
-        message = await ctx.channel.fetch_message(existing_entry['message_id'])
-        await message.delete()
+        try:
+            message = await ctx.channel.fetch_message(existing_entry['message_id'])
+            await message.delete()
+        except:
+            pass
         self.embed_settings.delete_one({'guild_id': ctx.guild.id})
         await ctx.send(f"Embed updates disabled in {ctx.channel.mention}.", delete_after=5)
 
