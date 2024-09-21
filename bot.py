@@ -1,16 +1,37 @@
-import discord, os
+import discord, os, json, requests, threading, time
 from discord.ext import commands
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 from dotenv import load_dotenv
 load_dotenv()
 script_path = os.path.dirname(__file__)
+def proxy_setup():
+    os.system(f'{script_path}/proxies/opera-proxy -country EU -bind-address 127.0.0.1:8080 > /dev/null 2>&1')
+
+try:
+    with open(f'{script_path}/config.json') as f:
+        config = json.load(f)
+        if config.get('proxy', False):
+            threading.Thread(target=proxy_setup).start()
+            while True:
+                try:
+                    requests.head('http://127.0.0.1:8080', timeout=1)
+                    print('Proxy running')
+                    break
+                except requests.ConnectionError:
+                    time.sleep(1)
+                time.sleep(1)
+            proxy = "http://127.0.0.1:8080"
+        else:
+            proxy = None
+except FileNotFoundError:
+    print('config.json not found, defaulting to no proxy')
+    proxy = None
 TOKEN = os.environ["TOKEN"]
 uri = os.environ["MONGODB_URI"]
 client = MongoClient(uri, server_api=ServerApi('1'))
 db = client["discord_bot"]
 counter = db['counter']
-
 try:
     client.admin.command('ping')
     print("Successfully connected to MongoDB!")
@@ -21,7 +42,7 @@ class Bot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.all()
         intents.message_content = True
-        super().__init__(command_prefix = ">", intents = intents)
+        super().__init__(command_prefix = ">", intents = intents, proxy = proxy)
         self.script_path = script_path
         self.db = db
         self.counter = counter
@@ -74,11 +95,4 @@ async def on_ready():
             await bot.load_extension(f'cogs.{filename[:-3]}')
     print(f'Logged in as {bot.user}')
 
-try:
-    bot.run(TOKEN)
-except discord.HTTPException as e:
-    if e.status == 429:
-        print('Rate limited!')
-        os.system('kill 1')
-    else:
-        raise e
+bot.run(TOKEN)
