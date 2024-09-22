@@ -1,32 +1,28 @@
-import discord, os, json, requests, threading, time
+import discord, os, json, requests, subprocess, time
 from discord.ext import commands
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 from dotenv import load_dotenv
 load_dotenv()
 script_path = os.path.dirname(__file__)
-def proxy_setup():
-    os.system(f'{script_path}/proxies/opera-proxy -country EU -bind-address 127.0.0.1:8080 > /dev/null 2>&1')
 
 try:
     with open(f'{script_path}/config.json') as f:
         config = json.load(f)
-        if config.get('proxy', False):
-            threading.Thread(target=proxy_setup).start()
-            while True:
-                try:
-                    requests.head('http://127.0.0.1:8080', timeout=1)
-                    print('Proxy running')
-                    break
-                except requests.ConnectionError:
-                    time.sleep(1)
+    proxy = "http://127.0.0.1:8080" if config.get('proxy') else None
+    if proxy:
+        subprocess.Popen(f"{script_path}/proxies/opera-proxy -country EU -bind-address {proxy.split('/')[2]}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        while True:
+            try:
+                requests.head(proxy, timeout=1)
+                print('Proxy running')
+                break
+            except requests.ConnectionError:
                 time.sleep(1)
-            proxy = "http://127.0.0.1:8080"
-        else:
-            proxy = None
 except FileNotFoundError:
     print('config.json not found, defaulting to no proxy')
     proxy = None
+
 TOKEN = os.environ["TOKEN"]
 uri = os.environ["MONGODB_URI"]
 client = MongoClient(uri, server_api=ServerApi('1'))
@@ -42,6 +38,12 @@ class Bot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.all()
         intents.message_content = True
+        intents.presences = True
+        intents.guilds = True
+        intents.members = True
+        intents.messages = True
+        intents.reactions = True
+        intents.typing = True
         super().__init__(command_prefix = ">", intents = intents, proxy = proxy)
         self.script_path = script_path
         self.db = db
