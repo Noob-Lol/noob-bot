@@ -1,28 +1,22 @@
-import discord, os, json, requests, subprocess, time
+import discord, os, requests, subprocess, sys
 from discord.ext import commands
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 from dotenv import load_dotenv
 load_dotenv()
 script_path = os.path.dirname(__file__)
-
-try:
-    with open(f'{script_path}/config.json') as f:
-        config = json.load(f)
-    proxy = "http://127.0.0.1:8080" if config.get('proxy') else None
-    if proxy:
-        subprocess.Popen(f"{script_path}/proxies/opera-proxy -country EU -bind-address {proxy.split('/')[2]}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        while True:
-            try:
-                requests.head(proxy, timeout=1)
-                print('Proxy running')
-                break
-            except requests.ConnectionError:
-                time.sleep(1)
-except FileNotFoundError:
-    print('config.json not found, defaulting to no proxy')
+if len(sys.argv) > 1 and sys.argv[1] == 'proxy':
+    proxy = "http://127.0.0.1:8080"
+    subprocess.Popen(f"{script_path}/proxies/opera-proxy -country EU -bind-address {proxy.split('/')[2]}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    while True:
+        try:
+            requests.head(proxy, timeout=1)
+            print('Proxy started')
+            break
+        except requests.ConnectionError:
+            pass
+else:
     proxy = None
-
 TOKEN = os.environ["TOKEN"]
 uri = os.environ["MONGODB_URI"]
 client = MongoClient(uri, server_api=ServerApi('1'))
@@ -59,7 +53,7 @@ async def check_guild(ctx):
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CheckFailure):
         if ctx.guild is None:
-            await ctx.send("You can't use commands in DMs.")
+            await ctx.send("You can't use commands in DMs.", ephemeral = True)
         return
     await ctx.reply(error, ephemeral = True)
 
@@ -77,6 +71,10 @@ async def hybrid_command(ctx: commands.Context):
         await ctx.send("This is a slash command!")
     else:
         await ctx.send("This is a regular command!")
+
+@bot.hybrid_command(name="hi", help="Says hello")
+async def hi(ctx):
+    await ctx.send(f'Hello!')
 
 @bot.hybrid_command(name="ping", help="Sends the bot's latency.")
 async def ping(ctx):
@@ -97,4 +95,12 @@ async def on_ready():
             await bot.load_extension(f'cogs.{filename[:-3]}')
     print(f'Logged in as {bot.user}')
 
-bot.run(TOKEN)
+try:
+    bot.run(TOKEN)
+except discord.HTTPException as e:
+    if e.status == 429:
+        if len(sys.argv) > 1 and sys.argv[1] == 'proxy':
+            print('Hit proxy rate limit (this should never trigger)')
+            exit(0)
+        print('Rate limited, restarting with proxy.')
+        os.execv(sys.executable, ['python'] + sys.argv+ ['proxy'])
