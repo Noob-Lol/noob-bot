@@ -102,5 +102,7 @@ except discord.HTTPException as e:
         if len(sys.argv) > 1 and sys.argv[1] == 'proxy':
             print('Hit proxy rate limit (this should never trigger)')
             exit(0)
-        print('Rate limited, restarting with proxy.')
-        os.execv(sys.executable, ['python'] + sys.argv+ ['proxy'])
+        print('Main IP is rate limited, restarting with proxy.')
+        os.execv(sys.executable, ['python', __file__, 'proxy'])
+    else:
+        raise
