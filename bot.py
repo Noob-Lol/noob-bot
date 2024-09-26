@@ -1,22 +1,9 @@
-import discord, os, requests, subprocess, sys
+import discord, os, requests, subprocess, dotenv
 from discord.ext import commands
-from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
-from dotenv import load_dotenv
-load_dotenv()
+from pymongo.mongo_client import MongoClient
+dotenv.load_dotenv()
 script_path = os.path.dirname(__file__)
-if len(sys.argv) > 1 and sys.argv[1] == 'proxy':
-    proxy = "http://127.0.0.1:8080"
-    subprocess.Popen(f"{script_path}/proxies/opera-proxy -country EU -bind-address {proxy.split('/')[2]}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    while True:
-        try:
-            requests.head(proxy, timeout=1)
-            print('Proxy started')
-            break
-        except requests.ConnectionError:
-            pass
-else:
-    proxy = None
 TOKEN = os.environ["TOKEN"]
 uri = os.environ["MONGODB_URI"]
 client = MongoClient(uri, server_api=ServerApi('1'))
@@ -27,6 +14,24 @@ try:
     print("Successfully connected to MongoDB!")
 except Exception as e:
     print(e)
+
+response = requests.get("https://discord.com/api/v9/users/@me", headers={"Authorization": f"Bot {TOKEN}"})
+if response.status_code == 429:
+    retry_after = response.headers["Retry-After"]
+    print(f"Rate limited. Restart in {retry_after} seconds.")
+    proxy = "http://127.0.0.1:8080"
+    subprocess.Popen(f"{script_path}/proxies/opera-proxy -country EU -bind-address {proxy.split('/')[2]}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    while True:
+        try:
+            requests.head(proxy, timeout=1)
+            print('Proxy started')
+            break
+        except requests.ConnectionError:
+            pass
+else:
+    response.raise_for_status()
+    print('No rate limit.')
+    proxy = None
 
 class Bot(commands.Bot):
     def __init__(self):
@@ -95,14 +100,4 @@ async def on_ready():
             await bot.load_extension(f'cogs.{filename[:-3]}')
     print(f'Logged in as {bot.user}')
 
-try:
-    bot.run(TOKEN)
-except discord.HTTPException as e:
-    if e.status == 429:
-        if len(sys.argv) > 1 and sys.argv[1] == 'proxy':
-            print('Hit proxy rate limit (this should never trigger)')
-            exit(0)
-        print('Main IP is rate limited, restarting with proxy.')
-        os.execv(sys.executable, ['python', __file__, 'proxy'])
-    else:
-        raise
+bot.run(TOKEN)
