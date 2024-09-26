@@ -8,6 +8,9 @@ class FunCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.log_path = (f'{bot.script_path}/log.txt')
+        bot.loop.run_in_executor(None, self.flux_load)
+
+    def flux_load(self):
         try:
             self.merged = Client("multimodalart/FLUX.1-merged")
         except Exception as e:
