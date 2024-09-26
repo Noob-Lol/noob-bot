@@ -8,23 +8,29 @@ class FunCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.log_path = (f'{bot.script_path}/log.txt')
-        bot.loop.run_in_executor(None, self.flux_load)
+        bot.loop.run_in_executor(None, self.load_merged)
+        bot.loop.run_in_executor(None, self.load_dev)
+        bot.loop.run_in_executor(None, self.load_schnell)
 
-    def flux_load(self):
+    def load_merged(self):
         try:
             self.merged = Client("multimodalart/FLUX.1-merged")
         except Exception as e:
-            print(e)
+            print(f'Merged model failed to load: {e}')
             self.merged = None
+
+    def load_dev(self):
         try:
             self.dev = Client("black-forest-labs/FLUX.1-dev")
         except Exception as e:
-            print(e)
+            print(f'Dev model failed to load: {e}')
             self.dev = None
+
+    def load_schnell(self):
         try:
             self.schnell = Client("black-forest-labs/FLUX.1-schnell")
         except Exception as e:
-            print(e)
+            print(f'Schnell model failed to load: {e}')
             self.schnell = None
 
     @commands.hybrid_command(name="cat", help="Sends a random cat image")
