@@ -1,9 +1,38 @@
-import discord, os, requests, subprocess, dotenv
+import discord, os, requests, subprocess, dotenv, socket, time
+from aiohttp import web
 from discord.ext import commands
 from pymongo.server_api import ServerApi
 from pymongo.mongo_client import MongoClient
 dotenv.load_dotenv()
 script_path = os.path.dirname(__file__)
+try:
+    server2 = os.environ['SERVER2']
+    while True:
+        try:
+            response = requests.get(f"http://{server2}/status", timeout=2)
+            if response.status_code == 200:
+                print("Bot is online, waiting...")
+                time.sleep(30)
+            else:
+                print("Something went wrong.")
+                break
+        except requests.ConnectionError:
+            break
+except KeyError:
+    print("Second server not configured, skipping.")
+
+def get_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(('8.8.8.8', 80))
+    return s.getsockname()[0]
+
+try:
+    ip = os.environ['SERVER_IP']
+    port = os.environ['SERVER_PORT']
+except KeyError:
+    ip = get_ip()
+    port = 6969
+
 TOKEN = os.environ["TOKEN"]
 uri = os.environ["MONGODB_URI"]
 client = MongoClient(uri, server_api=ServerApi('1'))
@@ -15,7 +44,7 @@ try:
 except Exception as e:
     print(e)
 
-response = requests.get("https://discord.com/api/v9/users/@me", headers={"Authorization": f"Bot {TOKEN}"})
+response = requests.get("https://discord.com/api/v10/users/@me", headers={"Authorization": f"Bot {TOKEN}"})
 if response.status_code == 429:
     retry_after = response.headers["Retry-After"]
     print(f"Rate limited. Restart in {retry_after} seconds.")
@@ -30,7 +59,6 @@ if response.status_code == 429:
             pass
 else:
     response.raise_for_status()
-    print('No rate limit.')
     proxy = None
 
 class Bot(commands.Bot):
@@ -81,7 +109,7 @@ async def hybrid_command(ctx: commands.Context):
 async def hi(ctx):
     await ctx.send(f'Hello!')
 
-@bot.hybrid_command(name="ping", help="Sends the bot's latency.")
+@bot.hybrid_command(name="ping", help="Sends bot's latency.")
 async def ping(ctx):
     await ctx.send(f'Pong! {round (bot.latency * 1000)} ms')
 
@@ -92,12 +120,21 @@ async def sync(ctx):
     await bot.tree.sync()      
     await ctx.send("Synced!", delete_after=3)
 
+async def web_status(self):
+    return web.Response(text='OK')
+
 @bot.event
 async def on_ready():
     await bot.change_presence(activity=discord.CustomActivity(name='im cool 😎, ">" prefix'))
     for filename in os.listdir(f'{script_path}/cogs'):
         if filename.endswith('.py'):
             await bot.load_extension(f'cogs.{filename[:-3]}')
+    app = web.Application()
+    app.router.add_get('/status', web_status)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    await web.TCPSite(runner, '0.0.0.0', int(port)).start()
+    print(f'Started at http://{ip}:{port}/status')
     print(f'Logged in as {bot.user}')
 
 bot.run(TOKEN)

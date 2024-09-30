@@ -3,5 +3,6 @@
 __pycache__
 nitro.txt
 log.txt
+nitro_log.txt
 lock.txt
 config.json
