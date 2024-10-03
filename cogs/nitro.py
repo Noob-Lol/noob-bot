@@ -4,25 +4,24 @@ from discord.ext import commands, tasks
 class NitroCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.bot_path = bot.script_path
-        self.nitro_db = bot.counter
+        self.start_time = datetime.datetime.now()
         self.embed_settings = bot.db['embed_settings']
         self.update_embed.start()
 
     @commands.hybrid_command(name="nitro", help="Sends a free nitro link")
     @commands.cooldown(1, 5, commands.BucketType.user)
     async def nitro(self, ctx):
-        if os.path.exists(f'{self.bot_path}/lock.txt'):
+        if os.path.exists(f'{self.bot.script_path}/lock.txt'):
             await ctx.send('The bot is in maintenance, please retry later.', delete_after=5)
             return
-        with open(f'{self.bot_path}/nitro.txt', "r") as file:
+        with open(f'{self.bot.script_path}/nitro.txt', "r") as file:
             lines = file.readlines()
         if lines:
             first_line = lines[0].strip()
-            with open(f'{self.bot_path}/nitro.txt', "w") as file:
+            with open(f'{self.bot.script_path}/nitro.txt', "w") as file:
                 file.writelines(lines[1:])
-            self.nitro_db.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': 1}}, upsert=True)
-            with open(f'{self.bot_path}/nitro_log.txt', 'a') as file:
+            self.bot.counter.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': 1}}, upsert=True)
+            with open(f'{self.bot.script_path}/nitro_log.txt', 'a') as file:
                 file.write(f'{ctx.author.name} used nitro code: {first_line}\n')
             await ctx.send(first_line)
         else:
@@ -38,8 +37,8 @@ class NitroCog(commands.Cog):
                 message_id = setting['message_id']
                 channel = self.bot.get_channel(channel_id)
                 if channel:
-                    count = self.nitro_db.find_one({'_id': 'nitro_counter'})['count']
-                    with open(f'{self.bot_path}/nitro.txt', 'r') as f:
+                    count = self.bot.counter.find_one({'_id': 'nitro_counter'})['count']
+                    with open(f'{self.bot.script_path}/nitro.txt', 'r') as f:
                         nitro_count=sum(1 for _ in f)
                     embed = discord.Embed(title="Bot Status", description="Online 24/7, hosted somewhere...", color=discord.Color.random(), timestamp = datetime.datetime.now())
                     embed.add_field(name="Servers", value=f"{len(self.bot.guilds)}")
@@ -47,6 +46,10 @@ class NitroCog(commands.Cog):
                     embed.add_field(name="Ping", value=f"{round (self.bot.latency * 1000)} ms")
                     embed.add_field(name="Nitro stock", value=f"{nitro_count}")
                     embed.add_field(name="Nitro given", value=f"{count}")
+                    uptime = datetime.datetime.now() - self.start_time
+                    hours, remainder = divmod(uptime.seconds, 3600)
+                    minutes, _ = divmod(remainder, 60)
+                    embed.add_field(name="Uptime", value=f"{hours} h, {minutes} m")
                     embed.set_footer(text="coded by n01b")
                     message = await channel.fetch_message(message_id)
                     await message.edit(embed=embed)

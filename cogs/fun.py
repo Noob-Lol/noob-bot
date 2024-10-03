@@ -7,7 +7,6 @@ banned_words = ['gay', "sex", 'nigg', 'porn', 'nude']
 class FunCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.log_path = (f'{bot.script_path}/log.txt')
         bot.loop.run_in_executor(None, self.load_merged)
         bot.loop.run_in_executor(None, self.load_dev)
         bot.loop.run_in_executor(None, self.load_schnell)
@@ -64,7 +63,7 @@ class FunCog(commands.Cog):
         ])
     async def image(self, ctx, *, prompt: str, seed: int = 0, width: int = 1024, height: int = 1024, guidance_scale: float = 3.5, steps: int = 4, model: str = "schnell"):
         await ctx.defer()
-        with open(self.log_path, 'a') as f:
+        with open(f'{self.bot.script_path}/log.txt', 'a') as f:
             f.write(f"{ctx.author}, prompt: {prompt}, seed: {seed}, width: {width}, height: {height}, guidance_scale: {guidance_scale},steps: {steps}, model: {model}\n")
         if any(word in prompt.lower() for word in banned_words):
             duration = datetime.timedelta(seconds=120)
