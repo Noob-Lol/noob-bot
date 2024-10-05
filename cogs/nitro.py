@@ -4,7 +4,7 @@ from discord.ext import commands, tasks
 class NitroCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.start_time = datetime.datetime.now()
+        self.nitro_usage = bot.db['nitro_usage']
         self.embed_settings = bot.db['embed_settings']
         self.update_embed.start()
 
@@ -17,13 +17,20 @@ class NitroCog(commands.Cog):
         with open(f'{self.bot.script_path}/nitro.txt', "r") as file:
             lines = file.readlines()
         if lines:
+            today = datetime.date.today()
+            user_id = ctx.author.id
+            usage_count = self.nitro_usage.count_documents({'user_id': user_id, 'date': today})
+            if usage_count >= 10:
+                await ctx.send("You have exceeded the free limit. Try again tomorrow or boost the server.", delete_after=10)
+                return
+            self.nitro_usage.update_one({'user_id': user_id, 'date': today}, {'$inc': {'count': 1}}, upsert=True)
             first_line = lines[0].strip()
             with open(f'{self.bot.script_path}/nitro.txt', "w") as file:
                 file.writelines(lines[1:])
             self.bot.counter.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': 1}}, upsert=True)
             with open(f'{self.bot.script_path}/nitro_log.txt', 'a') as file:
                 file.write(f'{ctx.author.name} used nitro code: {first_line}\n')
-            await ctx.send(first_line)
+            await ctx.send(first_line.split('/')[1])
         else:
             await ctx.send("No nitro codes left.", delete_after=10)
 
@@ -46,10 +53,6 @@ class NitroCog(commands.Cog):
                     embed.add_field(name="Ping", value=f"{round (self.bot.latency * 1000)} ms")
                     embed.add_field(name="Nitro stock", value=f"{nitro_count}")
                     embed.add_field(name="Nitro given", value=f"{count}")
-                    uptime = datetime.datetime.now() - self.start_time
-                    hours, remainder = divmod(uptime.seconds, 3600)
-                    minutes, _ = divmod(remainder, 60)
-                    embed.add_field(name="Uptime", value=f"{hours} h, {minutes} m")
                     embed.set_footer(text="coded by n01b")
                     message = await channel.fetch_message(message_id)
                     await message.edit(embed=embed)
