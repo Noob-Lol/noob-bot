@@ -17,20 +17,19 @@ class NitroCog(commands.Cog):
         with open(f'{self.bot.script_path}/nitro.txt', "r") as file:
             lines = file.readlines()
         if lines:
-            today = datetime.date.today()
+            today_dt = datetime.datetime.combine(datetime.date.today(), datetime.time(0, 0, 0))
             user_id = ctx.author.id
-            usage_count = self.nitro_usage.count_documents({'user_id': user_id, 'date': today})
-            if usage_count >= 10:
+            if self.nitro_usage.count_documents({'user_id': user_id, 'date': today_dt}) >= 10:
                 await ctx.send("You have exceeded the free limit. Try again tomorrow or boost the server.", delete_after=10)
                 return
-            self.nitro_usage.update_one({'user_id': user_id, 'date': today}, {'$inc': {'count': 1}}, upsert=True)
+            self.nitro_usage.update_one({'user_id': user_id, 'date': today_dt}, {'$inc': {'count': 1}}, upsert=True)
             first_line = lines[0].strip()
             with open(f'{self.bot.script_path}/nitro.txt', "w") as file:
                 file.writelines(lines[1:])
             self.bot.counter.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': 1}}, upsert=True)
             with open(f'{self.bot.script_path}/nitro_log.txt', 'a') as file:
                 file.write(f'{ctx.author.name} used nitro code: {first_line}\n')
-            await ctx.send(first_line.split('/')[1])
+            await ctx.send(first_line[7::])
         else:
             await ctx.send("No nitro codes left.", delete_after=10)
 
