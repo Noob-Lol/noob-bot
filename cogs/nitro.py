@@ -10,26 +10,55 @@ class NitroCog(commands.Cog):
 
     @commands.hybrid_command(name="nitro", help="Sends a free nitro link")
     @commands.cooldown(1, 5, commands.BucketType.user)
-    async def nitro(self, ctx):
+    @discord.app_commands.describe(amount="How many codes. Server booster only!")
+    async def nitro(self, ctx, amount: int = 1):
+        await ctx.defer()
         if os.path.exists(f'{self.bot.script_path}/lock.txt'):
             await ctx.send('The bot is in maintenance, please retry later.', delete_after=5)
             return
         with open(f'{self.bot.script_path}/nitro.txt', "r") as file:
             lines = file.readlines()
         if lines:
-            today_dt = datetime.datetime.combine(datetime.date.today(), datetime.time(0, 0, 0))
-            user_id = ctx.author.id
-            if self.nitro_usage.count_documents({'user_id': user_id, 'date': today_dt}) >= 10:
-                await ctx.send("You have exceeded the free limit. Try again tomorrow or boost the server.", delete_after=10)
+            if ctx.author.premium_since:
+                pass
+            elif amount > 1:
+                await ctx.send('Boost to use this.', delete_after=5)
                 return
-            self.nitro_usage.update_one({'user_id': user_id, 'date': today_dt}, {'$inc': {'count': 1}}, upsert=True)
-            first_line = lines[0].strip()
-            with open(f'{self.bot.script_path}/nitro.txt', "w") as file:
-                file.writelines(lines[1:])
-            self.bot.counter.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': 1}}, upsert=True)
-            with open(f'{self.bot.script_path}/nitro_log.txt', 'a') as file:
-                file.write(f'{ctx.author.name} used nitro code: {first_line}\n')
-            await ctx.send(first_line[7::])
+            else:
+                today_dt = datetime.datetime.combine(datetime.date.today(), datetime.time(0, 0, 0))
+                user_id = ctx.author.id
+                result = self.nitro_usage.find_one({'user_id': user_id, 'date': today_dt})
+                if result and result['count'] >= 10:
+                    await ctx.send("You have exceeded the free limit. Try again tomorrow or boost the server.", delete_after=10)
+                    return
+                self.nitro_usage.update_one({'user_id': user_id, 'date': today_dt}, {'$inc': {'count': 1}}, upsert=True)
+            if amount > 1:
+                codes = []  
+                count = 0
+                with open(f'{self.bot.script_path}/nitro.txt', "r") as file:
+                    lines = file.readlines()
+                    for line in lines:
+                        if line:
+                            codes.append(line[7::])
+                            count += 1
+                            if count == amount:
+                                break
+                        else:
+                            break
+                self.bot.counter.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': count}}, upsert=True)
+                with open(f'{self.bot.script_path}/nitro_log.txt', 'a') as file:
+                    file.write(f'Booster {ctx.author.name} used {count} nitro codes: {codes}\n')
+                with open(f'{self.bot.script_path}/nitro.txt', "w") as file:
+                    file.writelines(lines[count:])
+                await ctx.send(''.join(codes))
+            else:
+                first_line = lines[0].strip()
+                with open(f'{self.bot.script_path}/nitro.txt', "w") as file:
+                    file.writelines(lines[1:])
+                self.bot.counter.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': 1}}, upsert=True)
+                with open(f'{self.bot.script_path}/nitro_log.txt', 'a') as file:
+                    file.write(f'{ctx.author.name} used nitro code: {first_line}\n')
+                await ctx.send(first_line[7::])
         else:
             await ctx.send("No nitro codes left.", delete_after=10)
 
