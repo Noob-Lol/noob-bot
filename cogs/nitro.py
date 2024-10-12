@@ -67,7 +67,7 @@ class NitroCog(commands.Cog):
 
     @tasks.loop(hours=24)
     async def cleanup_old_limits(self):
-        today_dt = datetime.date.today() - datetime.timedelta(days=1)
+        today_dt = datetime.datetime.combine(datetime.date.today() - datetime.timedelta(days=1), datetime.time(0, 0, 0))
         self.nitro_usage.delete_many({'date': {'$lt': today_dt}})
 
     @tasks.loop(minutes=5)
