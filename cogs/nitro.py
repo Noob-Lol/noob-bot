@@ -67,6 +67,7 @@ class NitroCog(commands.Cog):
                 if place == "dm":
                     try:
                         await ctx.author.send(codes)
+                        await ctx.send(f"Sent {count} codes in dm.")
                     except:
                         await ctx.send("Failed to send dm, sending it here.", ephemeral=True)
                         await ctx.send(codes)
@@ -82,6 +83,7 @@ class NitroCog(commands.Cog):
                 if place == "dm":
                     try:
                         await ctx.author.send(first_line[7::])
+                        await ctx.send("Sent code in dm.")
                     except:
                         await ctx.send("Failed to send dm, sending it here.", ephemeral=True)
                         await ctx.send(first_line[7::])
