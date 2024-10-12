@@ -113,6 +113,30 @@ async def hi(ctx):
 async def ping(ctx):
     await ctx.send(f'Pong! {round (bot.latency * 1000)} ms')
 
+@bot.hybrid_command(name="dm", help="Sends a DM to a user")
+@commands.is_owner()
+async def dm(ctx, member:discord.Member, *, content):
+    try:
+        await member.send(content)
+        await ctx.send("DM was sent", ephemeral = True)
+    except Exception as e:
+        await ctx.send("Could not send DM, {e}", ephemeral = True)
+
+@bot.hybrid_command(name="msg", help="Sends message as bot")
+@commands.is_owner()
+async def msg(ctx, content):
+    if not ctx.interaction:
+        await ctx.message.delete()
+    await ctx.send(content)
+
+@bot.hybrid_command(name="dmme", help="Sends a DM to the author")
+async def dmme(ctx, *, content):
+    try:
+        await ctx.author.send(content)
+        await ctx.send("DM was sent", ephemeral = True)
+    except Exception as e:
+        await ctx.send(f"Could not send DM, {e}", ephemeral = True)
+
 @bot.command(name= 'sync', help="Syncs commands")
 @commands.is_owner()
 async def sync(ctx):

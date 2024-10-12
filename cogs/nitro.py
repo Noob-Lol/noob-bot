@@ -11,11 +11,21 @@ class NitroCog(commands.Cog):
 
     @commands.hybrid_command(name="nitro", help="Sends a free nitro link")
     @commands.cooldown(1, 5, commands.BucketType.user)
-    @discord.app_commands.describe(amount="How many codes. Server booster only!")
-    async def nitro(self, ctx, amount: int = 1):
+    @discord.app_commands.describe(amount="How many codes. Server booster only!", place="Where to send the codes")
+    @discord.app_commands.choices(
+        place=[
+            discord.app_commands.Choice(name="dm", value="dm"),
+            discord.app_commands.Choice(name="channel (here, default)", value="channel")
+        ]
+    )
+    async def nitro(self, ctx, amount: int = 1, place: str = "channel"):
         await ctx.defer()
         if os.path.exists(f'{self.bot.script_path}/lock.txt'):
             await ctx.send('The bot is in maintenance, please retry later.', delete_after=5)
+            return
+        place = place.lower() 
+        if place != "dm" and place != "channel":
+            await ctx.send("Invalid place. Must be 'dm' or 'channel'.", delete_after=5)
             return
         with open(f'{self.bot.script_path}/nitro.txt', "r") as file:
             lines = file.readlines()
@@ -49,11 +59,19 @@ class NitroCog(commands.Cog):
                         else:
                             break
                 self.bot.counter.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': count}}, upsert=True)
+                codes = ''.join(codes)
                 with open(f'{self.bot.script_path}/nitro_log.txt', 'a') as file:
                     file.write(f'Booster {ctx.author.name} used {count} nitro codes: {codes}\n')
                 with open(f'{self.bot.script_path}/nitro.txt', "w") as file:
                     file.writelines(lines[count:])
-                await ctx.send(''.join(codes))
+                if place == "dm":
+                    try:
+                        await ctx.author.send(codes)
+                    except:
+                        await ctx.send("Failed to send dm, sending it here.", ephemeral=True)
+                        await ctx.send(codes)
+                else:
+                    await ctx.send(codes)
             else:
                 first_line = lines[0].strip()
                 with open(f'{self.bot.script_path}/nitro.txt', "w") as file:
@@ -61,7 +79,14 @@ class NitroCog(commands.Cog):
                 self.bot.counter.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': 1}}, upsert=True)
                 with open(f'{self.bot.script_path}/nitro_log.txt', 'a') as file:
                     file.write(f'{ctx.author.name} used nitro code: {first_line}\n')
-                await ctx.send(first_line[7::])
+                if place == "dm":
+                    try:
+                        await ctx.author.send(first_line[7::])
+                    except:
+                        await ctx.send("Failed to send dm, sending it here.", ephemeral=True)
+                        await ctx.send(first_line[7::])
+                else:
+                    await ctx.send(first_line[7::])
         else:
             await ctx.send("No nitro codes left.", delete_after=10)
 
