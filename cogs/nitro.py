@@ -7,6 +7,7 @@ class NitroCog(commands.Cog):
         self.nitro_usage = bot.db['nitro_usage']
         self.embed_settings = bot.db['embed_settings']
         self.update_embed.start()
+        self.cleanup_old_limits.start()
 
     @commands.hybrid_command(name="nitro", help="Sends a free nitro link")
     @commands.cooldown(1, 5, commands.BucketType.user)
@@ -63,6 +64,11 @@ class NitroCog(commands.Cog):
                 await ctx.send(first_line[7::])
         else:
             await ctx.send("No nitro codes left.", delete_after=10)
+
+    @tasks.loop(hours=24)
+    async def cleanup_old_limits(self):
+        today_dt = datetime.date.today() - datetime.timedelta(days=1)
+        self.nitro_usage.delete_many({'date': {'$lt': today_dt}})
 
     @tasks.loop(minutes=5)
     async def update_embed(self):
