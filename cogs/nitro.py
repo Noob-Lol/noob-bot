@@ -33,6 +33,8 @@ class NitroCog(commands.Cog):
                     return
                 self.nitro_usage.update_one({'user_id': user_id, 'date': today_dt}, {'$inc': {'count': 1}}, upsert=True)
             if amount > 1:
+                if amount > 40:
+                    amount = 40
                 codes = []  
                 count = 0
                 with open(f'{self.bot.script_path}/nitro.txt', "r") as file:
