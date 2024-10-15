@@ -1,6 +1,10 @@
 import discord, os, datetime
 from discord.ext import commands, tasks
 
+def p(desc, default = None):
+    return commands.parameter(description=desc, default=default)
+desc1, desc2 = "How many codes. Server booster only!", "Where to send the codes"
+
 class NitroCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -10,15 +14,15 @@ class NitroCog(commands.Cog):
         self.cleanup_old_limits.start()
 
     @commands.hybrid_command(name="nitro", help="Sends a free nitro link")
-    @commands.cooldown(1, 5, commands.BucketType.user)
-    @discord.app_commands.describe(amount="How many codes. Server booster only!", place="Where to send the codes")
+    @commands.cooldown(1, 5, commands.BucketType.guild)
+    @discord.app_commands.describe(amount=desc1, place=desc2)
     @discord.app_commands.choices(
         place=[
             discord.app_commands.Choice(name="dm", value="dm"),
             discord.app_commands.Choice(name="channel (here, default)", value="channel")
         ]
     )
-    async def nitro(self, ctx, amount: int = 1, place: str = "channel"):
+    async def nitro(self, ctx, amount: int = p(desc1, 1), place: str = p(desc2, "channel")):
         await ctx.defer()
         if os.path.exists(f'{self.bot.script_path}/lock.txt'):
             await ctx.send('The bot is in maintenance, please retry later.', delete_after=5)

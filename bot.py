@@ -64,13 +64,6 @@ else:
 class Bot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.all()
-        intents.message_content = True
-        intents.presences = True
-        intents.guilds = True
-        intents.members = True
-        intents.messages = True
-        intents.reactions = True
-        intents.typing = True
         super().__init__(command_prefix = ">", intents = intents, proxy = proxy)
         self.script_path = script_path
         self.db = db
@@ -87,8 +80,10 @@ async def on_command_error(ctx, error):
     if isinstance(error, commands.CheckFailure):
         if ctx.guild is None:
             await ctx.send("You can't use commands in DMs.", ephemeral = True)
-        return
-    await ctx.reply(error, ephemeral = True)
+    elif error.status == 429:
+        print(f"Rate limited. Retry in {error.headers['Retry-After']} seconds.")
+    else:
+        await ctx.reply(error, ephemeral = True)
 
 @bot.hybrid_command(name="add", help="Adds one to the database")
 @commands.cooldown(1, 5, commands.BucketType.user)
@@ -99,7 +94,7 @@ async def add(ctx):
         await ctx.send(f'Counter incremented to {result["count"]}')
 
 @bot.hybrid_command(name="hybrid", help="Hybrid test")
-async def hybrid_command(ctx: commands.Context):
+async def hybrid_command(ctx):
     if ctx.interaction:
         await ctx.send("This is a slash command!")
     else:
@@ -120,7 +115,7 @@ async def dm(ctx, member:discord.Member, *, content):
         await member.send(content)
         await ctx.send("DM was sent", ephemeral = True)
     except Exception as e:
-        await ctx.send("Could not send DM, {e}", ephemeral = True)
+        await ctx.send(f"Could not send DM, {e}", ephemeral = True)
 
 @bot.hybrid_command(name="msg", help="Sends message as bot")
 @commands.is_owner()
@@ -130,7 +125,7 @@ async def msg(ctx, content):
     await ctx.send(content)
 
 @bot.hybrid_command(name="dmme", help="Sends a DM to the author")
-async def dmme(ctx, *, content):
+async def dmme(ctx, content):
     try:
         await ctx.author.send(content)
         await ctx.send("DM was sent", ephemeral = True)
