@@ -1,9 +1,9 @@
 import discord, os, datetime
 from discord.ext import commands, tasks
 
+desc1, desc2 = "How many codes. Server booster only!", "Where to send the codes"
 def p(desc, default = None):
     return commands.parameter(description=desc, default=default)
-desc1, desc2 = "How many codes. Server booster only!", "Where to send the codes"
 
 class NitroCog(commands.Cog):
     def __init__(self, bot):

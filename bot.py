@@ -80,8 +80,8 @@ async def on_command_error(ctx, error):
     if isinstance(error, commands.CheckFailure):
         if ctx.guild is None:
             await ctx.send("You can't use commands in DMs.", ephemeral = True)
-    elif error.status == 429:
-        print(f"Rate limited. Retry in {error.headers['Retry-After']} seconds.")
+    elif isinstance(error, discord.HTTPException) and error.status == 429:
+        print(f"Rate limited. Retry in {error.response.headers['Retry-After']} seconds.")
     else:
         await ctx.reply(error, ephemeral = True)
 
