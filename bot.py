@@ -1,39 +1,14 @@
-import discord, os, requests, subprocess, dotenv, socket, time
+import discord, os, requests, dotenv
 from aiohttp import web
 from discord.ext import commands
 from pymongo.server_api import ServerApi
 from pymongo.mongo_client import MongoClient
 dotenv.load_dotenv()
 script_path = os.path.dirname(__file__)
-try:
-    server2 = os.environ['SERVER2']
-    while True:
-        try:
-            response = requests.get(f"http://{server2}/status", timeout=2)
-            if response.status_code == 200:
-                print("Bot is online, waiting...")
-                time.sleep(30)
-            else:
-                print("Something went wrong.")
-                break
-        except requests.ConnectionError:
-            break
-except KeyError:
-    print("Second server not configured, skipping.")
-
-def get_ip():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.connect(('8.8.8.8', 80))
-    return s.getsockname()[0]
-
-try:
-    ip = os.environ['SERVER_IP']
-    port = os.environ['SERVER_PORT']
-except KeyError:
-    ip = get_ip()
-    port = 6969
-
 TOKEN = os.environ["TOKEN"]
+PTOKEN = os.environ['PTOKEN']
+folder = "DiscordBotData"
+api = 'https://eapi.pcloud.com'
 uri = os.environ["MONGODB_URI"]
 client = MongoClient(uri, server_api=ServerApi('1'))
 db = client["discord_bot"]
@@ -44,30 +19,50 @@ try:
 except Exception as e:
     print(e)
 
-response = requests.get("https://discord.com/api/v10/users/@me", headers={"Authorization": f"Bot {TOKEN}"})
-if response.status_code == 429:
-    retry_after = response.headers["Retry-After"]
-    print(f"Rate limited. Restart in {retry_after} seconds.")
-    proxy = "http://127.0.0.1:8080"
-    subprocess.Popen(f"{script_path}/proxies/opera-proxy -country EU -bind-address {proxy.split('/')[2]}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    while True:
-        try:
-            requests.head(proxy, timeout=1)
-            print('Proxy started')
-            break
-        except requests.ConnectionError:
-            pass
-else:
-    response.raise_for_status()
-    proxy = None
-
 class Bot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.all()
-        super().__init__(command_prefix = ">", intents = intents, proxy = proxy)
+        super().__init__(command_prefix = ">", intents = intents)
         self.script_path = script_path
         self.db = db
         self.counter = counter
+
+    def log(self,text, file, temp_file='temp.txt'):
+        response = requests.get(f"{api}/listfolder", params={'path': f'/{folder}', 'auth': PTOKEN})
+        files = response.json().get('metadata', {}).get('contents', [])
+        file_info = next((f for f in files if f['name'] == file), None)
+        if file_info:
+            file_url = requests.get(f"{api}/getfilelink", params={'fileid': file_info['fileid'], 'auth': PTOKEN}).json()
+            download_url = file_url['hosts'][0] + file_url['path']
+            with open(temp_file, 'wb') as f:
+                f.write(requests.get(f'https://{download_url}').content)
+        else:
+            print(f"File '{file}' not found. Creating a new file.")
+        with open(temp_file, 'a') as f:
+            f.write(f"{text}\n")
+        with open(temp_file, 'rb') as f:
+            requests.post(f"{api}/uploadfile", files={'filename': (file, f)}, data={'path': f'/{folder}', 'auth': PTOKEN})
+        os.remove(temp_file)
+    
+    def get_lines(self, num_lines, file, count=False,temp_file='temp2.txt'):
+        response = requests.get(f"{api}/listfolder", params={'path': f'/{folder}', 'auth': PTOKEN})
+        files = response.json().get('metadata', {}).get('contents', [])
+        file_info = next((f for f in files if f['name'] == file), None)
+        if not file_info:
+            print(f"File '{file}' not found in folder '{folder}'.")
+            return
+        file_url = requests.get(f"{api}/getfilelink", params={'fileid': file_info['fileid'], 'auth': PTOKEN}).json()
+        download_url = file_url['hosts'][0] + file_url['path']
+        lines = requests.get(f'https://{download_url}').text.splitlines()
+        if count: return len(lines)
+        if num_lines > len(lines): num_lines = len(lines)
+        lines2 = lines[:num_lines]
+        with open(temp_file, 'w') as f:
+            f.write("\n".join(lines[num_lines:]))
+        with open(temp_file, 'rb') as f:
+            requests.post(f"{api}/uploadfile", files={'filename': (file, f)}, data={'path': f'/{folder}', 'auth': PTOKEN})
+        os.remove(temp_file)
+        return lines2
 
 bot = Bot()
 
@@ -149,11 +144,10 @@ async def on_ready():
         if filename.endswith('.py'):
             await bot.load_extension(f'cogs.{filename[:-3]}')
     app = web.Application()
-    app.router.add_get('/status', web_status)
+    app.router.add_get('/', web_status)
     runner = web.AppRunner(app)
     await runner.setup()
-    await web.TCPSite(runner, '0.0.0.0', int(port)).start()
-    print(f'Started at http://{ip}:{port}/status')
+    await web.TCPSite(runner, '0.0.0.0', 8000).start()
     print(f'Logged in as {bot.user}')
 
 bot.run(TOKEN)

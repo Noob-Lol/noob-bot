@@ -31,8 +31,7 @@ class NitroCog(commands.Cog):
         if place != "dm" and place != "channel":
             await ctx.send("Invalid place. Must be 'dm' or 'channel'.", delete_after=5)
             return
-        with open(f'{self.bot.script_path}/nitro.txt', "r") as file:
-            lines = file.readlines()
+        lines = self.bot.get_lines(amount, 'nitro.txt')
         if lines:
             if ctx.author.premium_since:
                 pass
@@ -52,22 +51,17 @@ class NitroCog(commands.Cog):
                     amount = 40
                 codes = []  
                 count = 0
-                with open(f'{self.bot.script_path}/nitro.txt', "r") as file:
-                    lines = file.readlines()
-                    for line in lines:
-                        if line:
-                            codes.append(line[7::])
-                            count += 1
-                            if count == amount:
-                                break
-                        else:
+                for line in lines:
+                    if line:
+                        codes.append(line[7::])
+                        count += 1
+                        if count == amount:
                             break
+                    else:
+                        break
                 self.bot.counter.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': count}}, upsert=True)
                 codes = ''.join(codes)
-                with open(f'{self.bot.script_path}/nitro_log.txt', 'a') as file:
-                    file.write(f'Booster {ctx.author.name} used {count} nitro codes: {codes}\n')
-                with open(f'{self.bot.script_path}/nitro.txt', "w") as file:
-                    file.writelines(lines[count:])
+                self.bot.log(f'Booster {ctx.author.name} used {count} nitro codes: {codes}', 'nitro_log.txt')
                 if place == "dm":
                     try:
                         await ctx.send(f"Sent {count} codes in dm.")
@@ -79,20 +73,18 @@ class NitroCog(commands.Cog):
                     await ctx.send(codes)
             else:
                 first_line = lines[0].strip()
-                with open(f'{self.bot.script_path}/nitro.txt', "w") as file:
-                    file.writelines(lines[1:])
                 self.bot.counter.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': 1}}, upsert=True)
-                with open(f'{self.bot.script_path}/nitro_log.txt', 'a') as file:
-                    file.write(f'{ctx.author.name} used nitro code: {first_line}\n')
+                self.bot.log(f'{ctx.author.name} used nitro code: {first_line}', 'nitro_log.txt')
+                code = first_line[7::]
                 if place == "dm":
                     try:
                         await ctx.send("Sent code in dm.")
-                        await ctx.author.send(first_line[7::])
+                        await ctx.author.send(code)
                     except:
                         await ctx.send("Failed to send dm, sending it here.", ephemeral=True)
-                        await ctx.send(first_line[7::])
+                        await ctx.send(code)
                 else:
-                    await ctx.send(first_line[7::])
+                    await ctx.send(code)
         else:
             await ctx.send("No nitro codes left.", delete_after=10)
 
@@ -112,8 +104,7 @@ class NitroCog(commands.Cog):
                 channel = self.bot.get_channel(channel_id)
                 if channel:
                     count = self.bot.counter.find_one({'_id': 'nitro_counter'})['count']
-                    with open(f'{self.bot.script_path}/nitro.txt', 'r') as f:
-                        nitro_count=sum(1 for _ in f)
+                    nitro_count = self.bot.get_lines(0, 'nitro.txt', True)
                     embed = discord.Embed(title="Bot Status", description="Online 24/7, hosted somewhere...", color=discord.Color.random(), timestamp = datetime.datetime.now())
                     embed.add_field(name="Servers", value=f"{len(self.bot.guilds)}")
                     embed.add_field(name="Users", value=f"{len(self.bot.users)}")

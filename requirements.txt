@@ -3,4 +3,3 @@ python-dotenv
 pymongo
 requests
 gradio_client
-paramiko
