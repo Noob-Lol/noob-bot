@@ -36,10 +36,7 @@ class Bot(commands.Bot):
             download_url = file_url['hosts'][0] + file_url['path']
             with open(temp_file, 'wb') as f:
                 f.write(requests.get(f'https://{download_url}').content)
-        else:
-            print(f"File '{file}' not found. Creating a new file.")
-        with open(temp_file, 'a') as f:
-            f.write(f"{text}\n")
+        with open(temp_file, 'a') as f: f.write(f"{text}\n")
         with open(temp_file, 'rb') as f:
             requests.post(f"{api}/uploadfile", files={'filename': (file, f)}, data={'path': f'/{folder}', 'auth': PTOKEN})
         os.remove(temp_file)
@@ -57,8 +54,7 @@ class Bot(commands.Bot):
         if count: return len(lines)
         if num_lines > len(lines): num_lines = len(lines)
         lines2 = lines[:num_lines]
-        with open(temp_file, 'w') as f:
-            f.write("\n".join(lines[num_lines:]))
+        with open(temp_file, 'w') as f: f.write("\n".join(lines[num_lines:]))
         with open(temp_file, 'rb') as f:
             requests.post(f"{api}/uploadfile", files={'filename': (file, f)}, data={'path': f'/{folder}', 'auth': PTOKEN})
         os.remove(temp_file)
@@ -77,8 +73,7 @@ async def on_command_error(ctx, error):
             await ctx.send("You can't use commands in DMs.", ephemeral = True)
     elif isinstance(error, discord.HTTPException) and error.status == 429:
         print(f"Rate limited. Retry in {error.response.headers['Retry-After']} seconds.")
-    else:
-        await ctx.reply(error, ephemeral = True)
+    else: await ctx.send(error, ephemeral = True)
 
 @bot.hybrid_command(name="add", help="Adds one to the database")
 @commands.cooldown(1, 5, commands.BucketType.user)

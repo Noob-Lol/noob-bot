@@ -1,4 +1,5 @@
 import discord, os, datetime
+from discord import app_commands
 from discord.ext import commands, tasks
 
 desc1, desc2 = "How many codes. Server booster only!", "Where to send the codes"
@@ -10,20 +11,21 @@ class NitroCog(commands.Cog):
         self.bot = bot
         self.nitro_usage = bot.db['nitro_usage']
         self.embed_settings = bot.db['embed_settings']
+        self.embed_var = list(self.embed_settings.find())
+        self.count = bot.counter.find_one({'_id': 'nitro_counter'})['count']
         self.update_embed.start()
         self.cleanup_old_limits.start()
 
     @commands.hybrid_command(name="nitro", help="Sends a free nitro link")
     @commands.cooldown(1, 5, commands.BucketType.guild)
-    @discord.app_commands.describe(amount=desc1, place=desc2)
-    @discord.app_commands.choices(
+    @app_commands.describe(amount=desc1, place=desc2)
+    @app_commands.choices(
         place=[
-            discord.app_commands.Choice(name="dm", value="dm"),
-            discord.app_commands.Choice(name="channel (here, default)", value="channel")
+            app_commands.Choice(name="dm", value="dm"),
+            app_commands.Choice(name="channel (here, default)", value="channel")
         ]
     )
     async def nitro(self, ctx, amount: int = p(desc1, 1), place: str = p(desc2, "channel")):
-        await ctx.defer()
         if os.path.exists(f'{self.bot.script_path}/lock.txt'):
             await ctx.send('The bot is in maintenance, please retry later.', delete_after=5)
             return
@@ -60,6 +62,7 @@ class NitroCog(commands.Cog):
                     else:
                         break
                 self.bot.counter.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': count}}, upsert=True)
+                self.count += count
                 codes = ''.join(codes)
                 self.bot.log(f'Booster {ctx.author.name} used {count} nitro codes: {codes}', 'nitro_log.txt')
                 if place == "dm":
@@ -74,6 +77,7 @@ class NitroCog(commands.Cog):
             else:
                 first_line = lines[0].strip()
                 self.bot.counter.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': 1}}, upsert=True)
+                self.count += 1
                 self.bot.log(f'{ctx.author.name} used nitro code: {first_line}', 'nitro_log.txt')
                 code = first_line[7::]
                 if place == "dm":
@@ -96,30 +100,27 @@ class NitroCog(commands.Cog):
     @tasks.loop(minutes=5)
     async def update_embed(self):
         try:
-            settings = self.embed_settings.find()
-            for setting in settings:
+            for setting in self.embed_var:
                 guild_id = setting['guild_id']
                 channel_id = setting['channel_id']
                 message_id = setting['message_id']
                 channel = self.bot.get_channel(channel_id)
                 if channel:
-                    count = self.bot.counter.find_one({'_id': 'nitro_counter'})['count']
                     nitro_count = self.bot.get_lines(0, 'nitro.txt', True)
                     embed = discord.Embed(title="Bot Status", description="Online 24/7, hosted somewhere...", color=discord.Color.random(), timestamp = datetime.datetime.now())
                     embed.add_field(name="Servers", value=f"{len(self.bot.guilds)}")
                     embed.add_field(name="Users", value=f"{len(self.bot.users)}")
                     embed.add_field(name="Ping", value=f"{round (self.bot.latency * 1000)} ms")
                     embed.add_field(name="Nitro stock", value=f"{nitro_count}")
-                    embed.add_field(name="Nitro given", value=f"{count}")
+                    embed.add_field(name="Nitro given", value=f"{self.count}")
                     embed.set_footer(text="coded by n01b")
                     message = await channel.fetch_message(message_id)
                     await message.edit(embed=embed)
         except discord.NotFound:
             self.embed_settings.delete_one({'guild_id': guild_id})
-        except discord.HTTPException as e:
-            print(f"HTTP exception occurred: {e}")
+            self.embed_var.remove(setting)
         except Exception as e:
-            print(f"An unexpected error occurred: {e}")
+            print(f"An error occurred: {e}")
 
     @commands.command(name="embe", help="Enable embed updates in the current channel.")
     @commands.is_owner()
@@ -136,6 +137,7 @@ class NitroCog(commands.Cog):
             'channel_id': ctx.channel.id,
             'message_id': message.id
         })
+        self.embed_var.append({'guild_id': ctx.guild.id, 'channel_id': ctx.channel.id, 'message_id': message.id})
         await ctx.send(f"Embed updates enabled in {ctx.channel.mention}!", delete_after=5)
 
     @commands.hybrid_command(name="embd", help="Disable embed updates in the current channel.")
@@ -152,6 +154,9 @@ class NitroCog(commands.Cog):
         except:
             pass
         self.embed_settings.delete_one({'guild_id': ctx.guild.id})
+        for i in self.embed_var:
+            if i['channel_id'] == ctx.channel.id:
+                self.embed_var.remove(i)
         await ctx.send(f"Embed updates disabled in {ctx.channel.mention}.", delete_after=5)
 
 async def setup(bot):
