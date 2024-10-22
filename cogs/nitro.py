@@ -63,7 +63,7 @@ class NitroCog(commands.Cog):
                         break
                 self.bot.counter.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': count}}, upsert=True)
                 self.count += count
-                codes = ''.join(codes)
+                codes = '\n'.join(codes)
                 self.bot.log(f'Booster {ctx.author.name} used {count} nitro codes: {codes}', 'nitro_log.txt')
                 if place == "dm":
                     try:
