@@ -33,13 +33,13 @@ class NitroCog(commands.Cog):
         if place != "dm" and place != "channel":
             await ctx.send("Invalid place. Must be 'dm' or 'channel'.", delete_after=5)
             return
+        if amount > 1 and not ctx.author.premium_since:
+            await ctx.send("You must be a server booster to get more than 1 code.", delete_after=5)
+            return
         lines = self.bot.get_lines(amount, 'nitro.txt')
         if lines:
             if ctx.author.premium_since:
                 pass
-            elif amount > 1:
-                await ctx.send('Boost to use this.', delete_after=5)
-                return
             else:
                 today_dt = datetime.datetime.combine(datetime.date.today(), datetime.time(0, 0, 0))
                 user_id = ctx.author.id
