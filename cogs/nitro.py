@@ -55,7 +55,7 @@ class NitroCog(commands.Cog):
                 count = 0
                 for line in lines:
                     if line:
-                        codes.append(line[7::])
+                        codes.append(line[8::])
                         count += 1
                         if count == amount:
                             break
@@ -65,6 +65,7 @@ class NitroCog(commands.Cog):
                 self.count += count
                 codes = '\n'.join(codes)
                 self.bot.log(f'Booster {ctx.author.name} used {count} nitro codes: {codes}', 'nitro_log.txt')
+                codes = f'```{codes}```'
                 if place == "dm":
                     try:
                         await ctx.send(f"Sent {count} codes in dm.")
@@ -79,7 +80,7 @@ class NitroCog(commands.Cog):
                 self.bot.counter.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': 1}}, upsert=True)
                 self.count += 1
                 self.bot.log(f'{ctx.author.name} used nitro code: {first_line}', 'nitro_log.txt')
-                code = first_line[7::]
+                code = f'```{first_line[8::]}```'
                 if place == "dm":
                     try:
                         await ctx.send("Sent code in dm.")
