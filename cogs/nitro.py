@@ -36,6 +36,8 @@ class NitroCog(commands.Cog):
         if amount > 1 and not ctx.author.premium_since:
             await ctx.send("You must be a server booster to get more than 1 code.", delete_after=5)
             return
+        if amount > 40:
+            amount = 40
         lines = self.bot.get_lines(amount, 'nitro.txt')
         if lines:
             if ctx.author.premium_since:
@@ -49,8 +51,6 @@ class NitroCog(commands.Cog):
                     return
                 self.nitro_usage.update_one({'user_id': user_id, 'date': today_dt}, {'$inc': {'count': 1}}, upsert=True)
             if amount > 1:
-                if amount > 40:
-                    amount = 40
                 codes = []  
                 count = 0
                 for line in lines:
@@ -107,7 +107,7 @@ class NitroCog(commands.Cog):
                 message_id = setting['message_id']
                 channel = self.bot.get_channel(channel_id)
                 if channel:
-                    nitro_count = self.bot.get_lines(0, 'nitro.txt', True)
+                    nitro_count = self.bot.get_lines(0, 'nitro.txt')
                     embed = discord.Embed(title="Bot Status", description="Online 24/7, hosted somewhere...", color=discord.Color.random(), timestamp = datetime.datetime.now())
                     embed.add_field(name="Servers", value=f"{len(self.bot.guilds)}")
                     embed.add_field(name="Users", value=f"{len(self.bot.users)}")

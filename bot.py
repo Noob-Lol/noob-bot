@@ -27,7 +27,7 @@ class Bot(commands.Bot):
         self.db = db
         self.counter = counter
 
-    def log(self,text, file, temp_file='temp.txt'):
+    def log(self, text, file, temp_file='temp.txt'):
         response = requests.get(f"{api}/listfolder", params={'path': f'/{folder}', 'auth': PTOKEN})
         files = response.json().get('metadata', {}).get('contents', [])
         file_info = next((f for f in files if f['name'] == file), None)
@@ -41,7 +41,7 @@ class Bot(commands.Bot):
             requests.post(f"{api}/uploadfile", files={'filename': (file, f)}, data={'path': f'/{folder}', 'auth': PTOKEN})
         os.remove(temp_file)
     
-    def get_lines(self, num_lines, file, count=False,temp_file='temp2.txt'):
+    def get_lines(self, num_lines, file, temp_file='temp2.txt'):
         response = requests.get(f"{api}/listfolder", params={'path': f'/{folder}', 'auth': PTOKEN})
         files = response.json().get('metadata', {}).get('contents', [])
         file_info = next((f for f in files if f['name'] == file), None)
@@ -51,8 +51,10 @@ class Bot(commands.Bot):
         file_url = requests.get(f"{api}/getfilelink", params={'fileid': file_info['fileid'], 'auth': PTOKEN}).json()
         download_url = file_url['hosts'][0] + file_url['path']
         lines = requests.get(f'https://{download_url}').text.splitlines()
-        if count: return len(lines)
-        if num_lines > len(lines): num_lines = len(lines)
+        if num_lines == 0: 
+            return len(lines)
+        if num_lines > len(lines): 
+            num_lines = len(lines)
         lines2 = lines[:num_lines]
         with open(temp_file, 'w') as f: f.write("\n".join(lines[num_lines:]))
         with open(temp_file, 'rb') as f:
