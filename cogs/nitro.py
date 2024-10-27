@@ -2,7 +2,7 @@ import discord, os, datetime
 from discord import app_commands
 from discord.ext import commands, tasks
 
-desc1, desc2 = "How many codes. Server booster only!", "Where to send the codes"
+desc1, desc2 = "How many codes", "Where to send"
 def p(desc, default = None):
     return commands.parameter(description=desc, default=default)
 
@@ -33,23 +33,23 @@ class NitroCog(commands.Cog):
         if place != "dm" and place != "channel":
             await ctx.send("Invalid place. Must be 'dm' or 'channel'.", delete_after=5)
             return
-        if amount > 1 and not ctx.author.premium_since:
-            await ctx.send("You must be a server booster to get more than 1 code.", delete_after=5)
-            return
+        # if amount > 1 and not ctx.author.premium_since:
+        #     await ctx.send("You must be a server booster to get more than 1 code.", delete_after=5)
+        #     return
         if amount > 40:
             amount = 40
         lines = self.bot.get_lines(amount, 'nitro.txt')
         if lines:
-            if ctx.author.premium_since:
-                pass
-            else:
-                today_dt = datetime.datetime.combine(datetime.date.today(), datetime.time(0, 0, 0))
-                user_id = ctx.author.id
-                result = self.nitro_usage.find_one({'user_id': user_id, 'date': today_dt})
-                if result and result['count'] >= 10:
-                    await ctx.send("You have exceeded the free limit. Try again tomorrow or boost the server.", delete_after=10)
-                    return
-                self.nitro_usage.update_one({'user_id': user_id, 'date': today_dt}, {'$inc': {'count': 1}}, upsert=True)
+            # if ctx.author.premium_since:
+            #     pass
+            # else:
+            #     today_dt = datetime.datetime.combine(datetime.date.today(), datetime.time(0, 0, 0))
+            #     user_id = ctx.author.id
+            #     result = self.nitro_usage.find_one({'user_id': user_id, 'date': today_dt})
+            #     if result and result['count'] >= 10:
+            #         await ctx.send("You have exceeded the free limit. Try again tomorrow or boost the server.", delete_after=10)
+            #         return
+            #     self.nitro_usage.update_one({'user_id': user_id, 'date': today_dt}, {'$inc': {'count': 1}}, upsert=True)
             if amount > 1:
                 codes = []  
                 count = 0
@@ -64,7 +64,7 @@ class NitroCog(commands.Cog):
                 self.bot.counter.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': count}}, upsert=True)
                 self.count += count
                 codes = '\n'.join(codes)
-                self.bot.log(f'Booster {ctx.author.name} used {count} nitro codes: {codes}', 'nitro_log.txt')
+                self.bot.log(f'{ctx.author.name} used {count} nitro codes: {codes}', 'nitro_log.txt')
                 codes = f'```{codes}```'
                 if place == "dm":
                     try:
