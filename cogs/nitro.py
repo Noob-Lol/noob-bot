@@ -33,23 +33,26 @@ class NitroCog(commands.Cog):
         if place != "dm" and place != "channel":
             await ctx.send("Invalid place. Must be 'dm' or 'channel'.", delete_after=5)
             return
-        # if amount > 1 and not ctx.author.premium_since:
-        #     await ctx.send("You must be a server booster to get more than 1 code.", delete_after=5)
-        #     return
+        if amount > 1 and not ctx.author.premium_since:
+            await ctx.send("You must be a server booster to get more than 1 code.", delete_after=5)
+            return
         if amount > 40:
             amount = 40
+        elif amount < 1:
+            await ctx.send("Invalid amount.", delete_after=5)
+            return
         lines = self.bot.get_lines(amount, 'nitro.txt')
         if lines:
-            # if ctx.author.premium_since:
-            #     pass
-            # else:
-            #     today_dt = datetime.datetime.combine(datetime.date.today(), datetime.time(0, 0, 0))
-            #     user_id = ctx.author.id
-            #     result = self.nitro_usage.find_one({'user_id': user_id, 'date': today_dt})
-            #     if result and result['count'] >= 10:
-            #         await ctx.send("You have exceeded the free limit. Try again tomorrow or boost the server.", delete_after=10)
-            #         return
-            #     self.nitro_usage.update_one({'user_id': user_id, 'date': today_dt}, {'$inc': {'count': 1}}, upsert=True)
+            if ctx.author.premium_since:
+                pass
+            else:
+                today_dt = datetime.datetime.combine(datetime.date.today(), datetime.time(0, 0, 0))
+                user_id = ctx.author.id
+                result = self.nitro_usage.find_one({'user_id': user_id, 'date': today_dt})
+                if result and result['count'] >= 10:
+                    await ctx.send("You have exceeded the free limit. Try again tomorrow or boost the server.", delete_after=10)
+                    return
+                self.nitro_usage.update_one({'user_id': user_id, 'date': today_dt}, {'$inc': {'count': 1}}, upsert=True)
             if amount > 1:
                 codes = []  
                 count = 0
