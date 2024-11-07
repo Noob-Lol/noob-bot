@@ -49,14 +49,13 @@ class NitroCog(commands.Cog):
                 result = self.nitro_usage.find_one({'user_id': user_id, 'date': today_dt})
                 if result:
                     rcount = result['count']
-                    limit = self.limit
-                    if rcount >= limit:
+                    if rcount >= self.limit:
                         await ctx.send("You have exceeded the free limit. Try again tomorrow or boost the server.", delete_after=15)
                         return
-                    elif rcount + amount > limit:
-                        amount = limit - rcount
-                if amount > limit:
-                    amount = limit
+                    elif rcount + amount > self.limit:
+                        amount = self.limit - rcount
+                if amount > self.limit:
+                    amount = self.limit
                 self.nitro_usage.update_one({'user_id': user_id, 'date': today_dt}, {'$inc': {'count': amount}}, upsert=True)
             lines = self.bot.get_lines(amount, 'nitro.txt')
             if amount > 1:
@@ -73,7 +72,7 @@ class NitroCog(commands.Cog):
                 self.bot.counter.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': count}}, upsert=True)
                 self.count += count
                 codes = '\n'.join(codes)
-                self.bot.log(f'{ctx.author.name} used {count} nitro codes: {codes}', 'nitro_log.txt')
+                self.bot.log(f'{ctx.author.name} got {count} nitro codes: {codes}', 'nitro_log.txt')
                 codes = f'```{codes}```'
                 if place == "dm":
                     try:
@@ -88,7 +87,7 @@ class NitroCog(commands.Cog):
                 first_line = lines[0].strip()
                 self.bot.counter.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': 1}}, upsert=True)
                 self.count += 1
-                self.bot.log(f'{ctx.author.name} used nitro code: {first_line}', 'nitro_log.txt')
+                self.bot.log(f'{ctx.author.name} got nitro code: {first_line}', 'nitro_log.txt')
                 code = f'```{first_line[8::]}```'
                 if place == "dm":
                     try:
@@ -110,6 +109,25 @@ class NitroCog(commands.Cog):
         self.limit = amount
         self.bot.counter.find_one_and_update({'_id': 'nitro_limit'}, {'$set': {'count': amount}}, upsert=True)
         await ctx.send(f"Updated nitro limit to {amount}.")
+
+    @commands.hybrid_command(name="usage", help="View nitro usage.")
+    async def usage(self, ctx):
+        if not ctx.interaction:
+            await ctx.message.delete()
+        if await self.bot.is_owner(ctx.author):
+            ctx.send("You are an owner, everything is unlimited.")
+            return
+        if ctx.author.premium_since:
+            ctx.send("You are a server booster, you can get infinite nitro codes.")
+            return
+        today_dt = datetime.datetime.combine(datetime.date.today(), datetime.time(0, 0, 0))
+        user_id = ctx.author.id
+        result = self.nitro_usage.find_one({'user_id': user_id, 'date': today_dt})
+        if result:
+            count = result['count']
+            await ctx.send(f"You have got {count}/{self.limit} nitro codes today.")
+        else:
+            await ctx.send(f"You have not got any nitro codes today. Limit: {self.limit}")
 
     @tasks.loop(hours=24)
     async def cleanup_old_limits(self):
