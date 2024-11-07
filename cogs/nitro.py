@@ -13,6 +13,7 @@ class NitroCog(commands.Cog):
         self.embed_settings = bot.db['embed_settings']
         self.embed_var = list(self.embed_settings.find())
         self.count = bot.counter.find_one({'_id': 'nitro_counter'})['count']
+        self.limit = bot.counter.find_one({'_id': 'nitro_limit'})['count']
         self.update_embed.start()
         self.cleanup_old_limits.start()
 
@@ -33,26 +34,31 @@ class NitroCog(commands.Cog):
         if place != "dm" and place != "channel":
             await ctx.send("Invalid place. Must be 'dm' or 'channel'.", delete_after=5)
             return
-        if amount > 1 and not ctx.author.premium_since:
-            await ctx.send("You must be a server booster to get more than 1 code.", delete_after=5)
-            return
         if amount > 40:
             amount = 40
         elif amount < 1:
             await ctx.send("Invalid amount.", delete_after=5)
             return
-        lines = self.bot.get_lines(amount, 'nitro.txt')
-        if lines:
-            if ctx.author.premium_since:
+        lines = self.bot.get_lines(0, 'nitro.txt')
+        if lines > 0:
+            if ctx.author.premium_since or await self.bot.is_owner(ctx.author):
                 pass
             else:
                 today_dt = datetime.datetime.combine(datetime.date.today(), datetime.time(0, 0, 0))
                 user_id = ctx.author.id
                 result = self.nitro_usage.find_one({'user_id': user_id, 'date': today_dt})
-                if result and result['count'] >= 10:
-                    await ctx.send("You have exceeded the free limit. Try again tomorrow or boost the server.", delete_after=10)
-                    return
-                self.nitro_usage.update_one({'user_id': user_id, 'date': today_dt}, {'$inc': {'count': 1}}, upsert=True)
+                if result:
+                    rcount = result['count']
+                    limit = self.limit
+                    if rcount >= limit:
+                        await ctx.send("You have exceeded the free limit. Try again tomorrow or boost the server.", delete_after=15)
+                        return
+                    elif rcount + amount > limit:
+                        amount = limit - rcount
+                if amount > limit:
+                    amount = limit
+                self.nitro_usage.update_one({'user_id': user_id, 'date': today_dt}, {'$inc': {'count': amount}}, upsert=True)
+            lines = self.bot.get_lines(amount, 'nitro.txt')
             if amount > 1:
                 codes = []  
                 count = 0
@@ -73,8 +79,8 @@ class NitroCog(commands.Cog):
                     try:
                         await ctx.send(f"Sent {count} codes in dm.")
                         await ctx.author.send(codes)
-                    except:
-                        await ctx.send("Failed to send dm, sending it here.", ephemeral=True)
+                    except Exception as e:
+                        await ctx.send(f"Failed to send dm, sending codes here. Error: {e}")
                         await ctx.send(codes)
                 else:
                     await ctx.send(codes)
@@ -88,13 +94,22 @@ class NitroCog(commands.Cog):
                     try:
                         await ctx.send("Sent code in dm.")
                         await ctx.author.send(code)
-                    except:
-                        await ctx.send("Failed to send dm, sending it here.", ephemeral=True)
+                    except Exception as e:
+                        await ctx.send(f"Failed to send dm, sending code here. Error: {e}")
                         await ctx.send(code)
                 else:
                     await ctx.send(code)
         else:
             await ctx.send("No nitro codes left.", delete_after=10)
+
+    @commands.hybrid_command(name="limit", help="Set nitro limit.")
+    @commands.is_owner()
+    async def set_limit(self, ctx, amount: int):
+        if not ctx.interaction:
+            await ctx.message.delete()
+        self.limit = amount
+        self.bot.counter.find_one_and_update({'_id': 'nitro_limit'}, {'$set': {'count': amount}}, upsert=True)
+        await ctx.send(f"Updated nitro limit to {amount}.")
 
     @tasks.loop(hours=24)
     async def cleanup_old_limits(self):
