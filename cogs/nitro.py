@@ -115,10 +115,10 @@ class NitroCog(commands.Cog):
         if not ctx.interaction:
             await ctx.message.delete()
         if await self.bot.is_owner(ctx.author):
-            ctx.send("You are an owner, everything is unlimited.")
+            await ctx.send("You are an owner, everything is unlimited.")
             return
         if ctx.author.premium_since:
-            ctx.send("You are a server booster, you can get infinite nitro codes.")
+            await ctx.send("You are a server booster, you can get infinite nitro codes.")
             return
         today_dt = datetime.datetime.combine(datetime.date.today(), datetime.time(0, 0, 0))
         user_id = ctx.author.id
