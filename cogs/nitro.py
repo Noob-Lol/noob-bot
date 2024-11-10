@@ -26,21 +26,21 @@ class NitroCog(commands.Cog):
             app_commands.Choice(name="channel (here, default)", value="channel")
         ]
     )
-    async def nitro(self, ctx, amount: int = p(desc1, 1), place: str = p(desc2, "channel")):
+    async def nitro(self, ctx, amount: app_commands.Range[int, 0] = p(desc1, 1), place: str = p(desc2, "channel")):
         if os.path.exists(f'{self.bot.script_path}/lock.txt'):
-            await ctx.send('The bot is in maintenance, please retry later.', delete_after=5)
+            await ctx.send('The bot is in maintenance, please retry later.', delete_after=10)
             return
         place = place.lower() 
         if place != "dm" and place != "channel":
-            await ctx.send("Invalid place. Must be 'dm' or 'channel'.", delete_after=5)
+            await ctx.send("Invalid place. Must be 'dm' or 'channel'.", delete_after=10)
             return
         if amount > 40:
             amount = 40
-        elif amount < 1:
-            await ctx.send("Invalid amount.", delete_after=5)
-            return
         lines = self.bot.get_lines(0, 'nitro.txt')
         if lines > 0:
+            if amount == 0:
+                await ctx.send(f"There are {lines} codes available.")
+                return
             if ctx.author.premium_since or await self.bot.is_owner(ctx.author):
                 pass
             else:
@@ -101,6 +101,17 @@ class NitroCog(commands.Cog):
         else:
             await ctx.send("No nitro codes left.", delete_after=10)
 
+    @nitro.error
+    async def nitro_error(self, ctx, error):
+        if isinstance(error, commands.CommandOnCooldown):
+            await ctx.send(f"You are on cooldown. Try again in {error.retry_after:.2f}s", delete_after=5)
+        elif isinstance(error, commands.BadArgument):
+            await ctx.send("Invalid amount. Please enter a valid integer.")
+        elif isinstance(error, commands.RangeError):
+            await ctx.send("Amount must be between 1 and 40.")
+        else:
+            raise error
+
     @commands.hybrid_command(name="limit", help="Set nitro limit.")
     @commands.is_owner()
     async def set_limit(self, ctx, amount: int):
@@ -109,16 +120,18 @@ class NitroCog(commands.Cog):
         self.limit = amount
         self.bot.counter.find_one_and_update({'_id': 'nitro_limit'}, {'$set': {'count': amount}}, upsert=True)
         await ctx.send(f"Updated nitro limit to {amount}.")
+    
+    @commands.hybrid_command(name="what", help="View nitro limit.")
+    async def get_limit(self, ctx):
+        await ctx.send(f"Current nitro limit (daily): {self.limit}")
 
     @commands.hybrid_command(name="usage", help="View nitro usage.")
     async def usage(self, ctx):
-        if not ctx.interaction:
-            await ctx.message.delete()
         if await self.bot.is_owner(ctx.author):
             await ctx.send("You are an owner, everything is unlimited.")
             return
         if ctx.author.premium_since:
-            await ctx.send("You are a server booster, you can get infinite nitro codes.")
+            await ctx.send("You are a server booster, no limit on nitro codes.")
             return
         today_dt = datetime.datetime.combine(datetime.date.today(), datetime.time(0, 0, 0))
         user_id = ctx.author.id
