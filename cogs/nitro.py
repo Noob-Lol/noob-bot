@@ -103,12 +103,13 @@ class NitroCog(commands.Cog):
 
     @nitro.error
     async def nitro_error(self, ctx, error):
-        if isinstance(error, commands.CommandOnCooldown):
-            await ctx.send(f"You are on cooldown. Try again in {error.retry_after:.2f}s", delete_after=5)
-        elif isinstance(error, commands.BadArgument):
-            await ctx.send("Invalid amount. Please enter a valid integer.")
-        elif isinstance(error, commands.RangeError):
-            await ctx.send("Amount must be between 1 and 40.")
+        if isinstance(error, commands.CommandInvokeError):
+            if isinstance(error.original, commands.BadArgument):
+                await ctx.send("Invalid amount. Please enter a valid integer.")
+            elif isinstance(error.original, commands.RangeError):
+                await ctx.send("Amount must be between 1 and 40.")
+            else:
+                raise error
         else:
             raise error
 
