@@ -158,6 +158,8 @@ class NitroCog(commands.Cog):
                     embed.set_footer(text="coded by n01b")
                     message = await channel.fetch_message(message_id)
                     await message.edit(embed=embed)
+                else:
+                    print(f"Bot does not have access to channel {channel_id}")
         except discord.NotFound:
             self.embed_settings.delete_one({'guild_id': guild_id})
             self.embed_var.remove(setting)

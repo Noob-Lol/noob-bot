@@ -22,7 +22,7 @@ except Exception as e:
 class Bot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.all()
-        super().__init__(command_prefix = ">", intents = intents)
+        super().__init__(command_prefix = commands.when_mentioned_or(">"), intents = intents)
         self.script_path = script_path
         self.db = db
         self.counter = counter
@@ -76,9 +76,11 @@ async def on_command_error(ctx, error):
     elif isinstance(error, discord.HTTPException) and error.status == 429:
         print(f"Rate limited. Retry in {error.response.headers['Retry-After']} seconds.")
     elif isinstance(error, commands.CommandNotFound):
-        await ctx.send("Command not found.", delete_after = 5)
+        await ctx.send(f"Command '{ctx.invoked_with}' not found.", delete_after = 5)
     elif isinstance(error, commands.CommandOnCooldown):
         await ctx.send(f"This command is on cooldown. Please wait {error.retry_after:.2f}s", ephemeral = True, delete_after = 5)
+    elif isinstance(error, commands.BadArgument):
+        await ctx.send("Bad argument.", ephemeral = True)
     else: await ctx.send(error, ephemeral = True)
 
 @bot.hybrid_command(name="add", help="Adds one to the database")
@@ -115,13 +117,13 @@ async def dm(ctx, member:discord.Member, *, content):
 
 @bot.hybrid_command(name="msg", help="Sends message as bot")
 @commands.is_owner()
-async def msg(ctx, content):
+async def msg(ctx, *, content):
     if not ctx.interaction:
         await ctx.message.delete()
     await ctx.send(content)
 
 @bot.hybrid_command(name="dmme", help="Sends a DM to the author")
-async def dmme(ctx, content):
+async def dmme(ctx, *, content):
     try:
         await ctx.author.send(content)
         await ctx.send("DM was sent", ephemeral = True)
