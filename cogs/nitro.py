@@ -26,7 +26,7 @@ class NitroCog(commands.Cog):
             app_commands.Choice(name="channel (here, default)", value="channel")
         ]
     )
-    async def nitro(self, ctx, amount: app_commands.Range[int, 0] = p(desc1, 1), place: str = p(desc2, "channel")):
+    async def nitro(self, ctx, amount: int = p(desc1, 1), place: str = p(desc2, "channel")):
         if os.path.exists(f'{self.bot.script_path}/lock.txt'):
             await ctx.send('The bot is in maintenance, please retry later.', delete_after=10)
             return
@@ -36,6 +36,9 @@ class NitroCog(commands.Cog):
             return
         if amount > 40:
             amount = 40
+        if amount < 0:
+            await ctx.send("Amount can't be negative.")
+            return
         lines = self.bot.get_lines(0, 'nitro.txt')
         if lines > 0:
             if amount == 0:
@@ -100,18 +103,6 @@ class NitroCog(commands.Cog):
                     await ctx.send(code)
         else:
             await ctx.send("No nitro codes left.", delete_after=10)
-
-    @nitro.error
-    async def nitro_error(self, ctx, error):
-        if isinstance(error, commands.CommandInvokeError):
-            if isinstance(error.original, commands.BadArgument):
-                await ctx.send("Invalid amount. Please enter a valid integer.")
-            elif isinstance(error.original, commands.RangeError):
-                await ctx.send("Amount must be between 1 and 40.")
-            else:
-                raise error
-        else:
-            raise error
 
     @commands.hybrid_command(name="limit", help="Set nitro limit.")
     @commands.is_owner()

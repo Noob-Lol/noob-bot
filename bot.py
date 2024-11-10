@@ -76,7 +76,7 @@ async def on_command_error(ctx, error):
     elif isinstance(error, discord.HTTPException) and error.status == 429:
         print(f"Rate limited. Retry in {error.response.headers['Retry-After']} seconds.")
     elif isinstance(error, commands.CommandNotFound):
-        await ctx.send("Command not found.", ephemeral = True)
+        await ctx.send("Command not found.", delete_after = 5)
     elif isinstance(error, commands.CommandOnCooldown):
         await ctx.send(f"This command is on cooldown. Please wait {error.retry_after:.2f}s", ephemeral = True, delete_after = 5)
     else: await ctx.send(error, ephemeral = True)
