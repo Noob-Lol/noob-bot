@@ -6,6 +6,7 @@ from pymongo.mongo_client import MongoClient
 dotenv.load_dotenv()
 script_path = os.path.dirname(__file__)
 TOKEN = os.environ["TOKEN"]
+RTOKEN = os.environ["RTOKEN"]
 PTOKEN = os.environ['PTOKEN']
 folder = "DiscordBotData"
 api = 'https://eapi.pcloud.com'
@@ -61,6 +62,19 @@ class Bot(commands.Bot):
             requests.post(f"{api}/uploadfile", files={'filename': (file, f)}, data={'path': f'/{folder}', 'auth': PTOKEN})
         os.remove(temp_file)
         return lines2
+    
+    def check_boost(self, guild_id, member_id):
+        response = requests.get(f'https://discord.com/api/v10/guilds/{guild_id}/premium/subscriptions', headers={'authorization': RTOKEN}).json()
+        if isinstance(response, list):
+            boost_count = 0
+            for boost in response:
+                user_id = boost['user']['id']
+                if int(user_id) == member_id:
+                    boost_count += 1
+            return boost_count
+        else:
+            print(response)
+            return False
 
 bot = Bot()
 
