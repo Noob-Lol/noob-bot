@@ -104,6 +104,21 @@ class NitroCog(commands.Cog):
         else:
             await ctx.send("No nitro codes left.", delete_after=10)
 
+    @nitro.error
+    async def nitro_error(self, ctx, error):
+        if isinstance(error, commands.BadArgument):
+            try:
+                int(ctx.message.content.split()[1])
+            except ValueError:
+                await ctx.send("Amount must be an integer.")
+                return
+            if 'dm' in ctx.message.content:
+                await ctx.send("Wrong format. Usage: >nitro [amount] [dm/channel]")
+            else:
+                await ctx.send("Invalid argument.")
+        else:
+            ctx.unhandled_error = True
+
     @commands.hybrid_command(name="limit", help="Set nitro limit.")
     @commands.is_owner()
     async def set_limit(self, ctx, amount: int):

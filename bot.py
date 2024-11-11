@@ -70,17 +70,19 @@ async def check_guild(ctx):
 
 @bot.event
 async def on_command_error(ctx, error):
+    if hasattr(ctx.command, 'on_error') and not hasattr(ctx, 'unhandled_error'):
+        return
+    ignored = (commands.CommandNotFound, )
+    error = getattr(error, 'original', error)
+    if isinstance(error, ignored):
+        return
     if isinstance(error, commands.CheckFailure):
         if ctx.guild is None:
             await ctx.send("You can't use commands in DMs.", ephemeral = True)
     elif isinstance(error, discord.HTTPException) and error.status == 429:
         print(f"Rate limited. Retry in {error.response.headers['Retry-After']} seconds.")
-    elif isinstance(error, commands.CommandNotFound):
-        await ctx.send(f"Command '{ctx.invoked_with}' not found.", delete_after = 5)
     elif isinstance(error, commands.CommandOnCooldown):
         await ctx.send(f"This command is on cooldown. Please wait {error.retry_after:.2f}s", ephemeral = True, delete_after = 5)
-    elif isinstance(error, commands.BadArgument):
-        await ctx.send("Bad argument.", ephemeral = True)
     else: await ctx.send(error, ephemeral = True)
 
 @bot.hybrid_command(name="add", help="Adds one to the database")
