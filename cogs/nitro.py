@@ -141,7 +141,7 @@ class NitroCog(commands.Cog):
         if not ctx.interaction:
             await ctx.message.delete()
         if amount < 1:
-            await ctx.send("Amount must be at least 1.")
+            await ctx.send("Amount must be at least 1.", delete_after=10)
             return
         if limit != "nitro_limit" and limit != "b1mult" and limit != "b2mult":
             await ctx.send("Invalid limit choice.", delete_after=10)
@@ -157,18 +157,18 @@ class NitroCog(commands.Cog):
     
     @commands.hybrid_command(name="what", help="View nitro limit.")
     async def get_limit(self, ctx):
-        await ctx.send(f"Current nitro limit (daily): {self.limit}")
+        await ctx.send(f"Current nitro limit (daily): {self.limit}, multipliers: 1 boost = {self.b1mult}, 2 boosts = {self.b2mult}")
 
     @commands.hybrid_command(name="usage", help="View nitro usage.")
     @commands.cooldown(1, 10, commands.BucketType.user)
     async def usage(self, ctx):
         member = ctx.author
-        if await self.bot.is_owner(member):
-            await ctx.send("You are an owner, everything is unlimited.")
-            return
         today_dt = datetime.datetime.combine(datetime.date.today(), datetime.time(0, 0, 0))
         user_id = member.id
         result = self.nitro_usage.find_one({'user_id': user_id, 'date': today_dt})
+        if not result:
+            result = {}
+            result['count'] = 0
         if result:
             count = result['count']
             if member.premium_since:
@@ -183,9 +183,7 @@ class NitroCog(commands.Cog):
                 else:
                     await ctx.send(f"{boost_count} boosts. There are no more perks after 2 boosts. Your usage is {count}/{self.limit*self.b2mult}.")
             else:
-                await ctx.send(f"Your usage is {count}/{self.limit}.")
-        else:
-            await ctx.send(f"You have not got any nitro codes today. Limit: {self.limit}")
+                await ctx.send(f"No boosts. Your usage is {count}/{self.limit}.")
 
     @tasks.loop(hours=24)
     async def cleanup_old_limits(self):
