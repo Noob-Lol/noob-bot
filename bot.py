@@ -14,6 +14,8 @@ uri = os.environ["MONGODB_URI"]
 client = MongoClient(uri, server_api=ServerApi('1'))
 db = client["discord_bot"]
 counter = db['counter']
+disabled_coll = db["disabled_channels"]
+disabled_channels = {channel["channel_id"] for channel in disabled_coll.find()}
 try:
     client.admin.command('ping')
     print("Successfully connected to MongoDB!")
@@ -27,6 +29,7 @@ class Bot(commands.Bot):
         self.script_path = script_path
         self.db = db
         self.counter = counter
+        self.react = False
 
     def log(self, text, file, temp_file='temp.txt'):
         response = requests.get(f"{api}/listfolder", params={'path': f'/{folder}', 'auth': PTOKEN})
@@ -82,6 +85,14 @@ bot = Bot()
 async def check_guild(ctx):
     return ctx.guild
 
+@bot.check
+async def check_channel(ctx):
+    if ctx.channel.id in disabled_channels and ctx.command.name != 'enable':
+        if ctx.interaction: 
+            await ctx.send("This channel is disabled.", ephemeral = True)
+        return False
+    return True
+
 @bot.event
 async def on_command_error(ctx, error):
     if hasattr(ctx.command, 'on_error') and not hasattr(ctx, 'unhandled_error'):
@@ -98,6 +109,17 @@ async def on_command_error(ctx, error):
     elif isinstance(error, commands.CommandOnCooldown):
         await ctx.send(f"This command is on cooldown. Please wait {error.retry_after:.2f}s", ephemeral = True, delete_after = 5)
     else: await ctx.send(error, ephemeral = True)
+
+@bot.event
+async def on_message(message):
+    if message.author == bot.user:
+        return
+    if '>nitro' in message.content.lower():
+        if not bot.react:
+            pass
+        else:
+            await message.add_reaction('☠️')
+    await bot.process_commands(message)
 
 @bot.hybrid_command(name="add", help="Adds one to the database")
 @commands.cooldown(1, 5, commands.BucketType.user)
@@ -145,6 +167,38 @@ async def dmme(ctx, *, content):
         await ctx.send("DM was sent", ephemeral = True)
     except Exception as e:
         await ctx.send(f"Could not send DM, {e}", ephemeral = True)
+
+@bot.hybrid_command(name="enable", help="Enables commands in a channel")
+@commands.has_permissions(administrator=True)
+async def enable_channel(ctx):
+    result = disabled_coll.delete_one({"channel_id": ctx.channel.id})
+    if result.deleted_count > 0:
+        disabled_channels.remove(ctx.channel.id)
+        await ctx.send("This channel has been enabled for bot commands.")
+    else:
+        await ctx.send("This channel is not disabled.")
+
+@bot.hybrid_command(name="disable", help="Disables commands in a channel")
+@commands.has_permissions(administrator=True)
+async def disable_channel(ctx):
+    if ctx.channel.id in disabled_channels:
+        await ctx.send("This channel is already disabled.")
+    else:
+        disabled_coll.insert_one({"channel_id": ctx.channel.id})
+        disabled_channels.add(ctx.channel.id)
+        await ctx.send("This channel has been disabled for bot commands.")
+
+@bot.hybrid_command(name="react", help="Toggles reaction")
+@commands.is_owner()
+async def react(ctx):
+    if not ctx.interaction:
+        await ctx.message.delete()
+    if bot.react:
+        bot.react = False
+        await ctx.send("Disabled reactions", delete_after=5, ephemeral = True)
+    else:
+        bot.react = True
+        await ctx.send("Enabled reactions", delete_after=5, ephemeral = True)
 
 @bot.command(name= 'sync', help="Syncs commands")
 @commands.is_owner()

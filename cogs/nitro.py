@@ -46,6 +46,8 @@ class NitroCog(commands.Cog):
             if amount == 0:
                 await ctx.send(f"There are {lines} codes available.")
                 return
+            if amount > lines:
+                amount = lines
             if await self.bot.is_owner(ctx.author):
                 pass
             else:
