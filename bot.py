@@ -59,7 +59,7 @@ class Bot(commands.Bot):
             response.raise_for_status()
             lines = response.text.splitlines()
             if not lines:
-                return 0
+                return '0'
             if num_lines == 0: 
                 return len(lines)
             if num_lines > len(lines): 
