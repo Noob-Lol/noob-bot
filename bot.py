@@ -46,25 +46,32 @@ class Bot(commands.Bot):
         os.remove(temp_file)
     
     def get_lines(self, num_lines, file, temp_file='temp2.txt'):
-        response = requests.get(f"{api}/listfolder", params={'path': f'/{folder}', 'auth': PTOKEN})
-        files = response.json().get('metadata', {}).get('contents', [])
-        file_info = next((f for f in files if f['name'] == file), None)
-        if not file_info:
-            print(f"File '{file}' not found in folder '{folder}'.")
-            return
-        file_url = requests.get(f"{api}/getfilelink", params={'fileid': file_info['fileid'], 'auth': PTOKEN}).json()
-        download_url = file_url['hosts'][0] + file_url['path']
-        lines = requests.get(f'https://{download_url}').text.splitlines()
-        if num_lines == 0: 
-            return len(lines)
-        if num_lines > len(lines): 
-            num_lines = len(lines)
-        lines2 = lines[:num_lines]
-        with open(temp_file, 'w') as f: f.write("\n".join(lines[num_lines:]))
-        with open(temp_file, 'rb') as f:
-            requests.post(f"{api}/uploadfile", files={'filename': (file, f)}, data={'path': f'/{folder}', 'auth': PTOKEN})
-        os.remove(temp_file)
-        return lines2
+        try:
+            response = requests.get(f"{api}/listfolder", params={'path': f'/{folder}', 'auth': PTOKEN})
+            files = response.json().get('metadata', {}).get('contents', [])
+            file_info = next((f for f in files if f['name'] == file), None)
+            if not file_info:
+                print(f"File '{file}' not found in folder '{folder}'.")
+                return
+            file_url = requests.get(f"{api}/getfilelink", params={'fileid': file_info['fileid'], 'auth': PTOKEN}).json()
+            download_url = file_url['hosts'][0] + file_url['path']
+            response = requests.get(f'https://{download_url}')
+            response.raise_for_status()
+            lines = response.text.splitlines()
+            if not lines:
+                return 0
+            if num_lines == 0: 
+                return len(lines)
+            if num_lines > len(lines): 
+                num_lines = len(lines)
+            lines2 = lines[:num_lines]
+            with open(temp_file, 'w') as f: f.write("\n".join(lines[num_lines:]))
+            with open(temp_file, 'rb') as f:
+                requests.post(f"{api}/uploadfile", files={'filename': (file, f)}, data={'path': f'/{folder}', 'auth': PTOKEN})
+            os.remove(temp_file)
+            return lines2
+        except Exception as e:
+            print(e)
     
     def check_boost(self, guild_id, member_id):
         response = requests.get(f'https://discord.com/api/v10/guilds/{guild_id}/premium/subscriptions', headers={'authorization': RTOKEN}).json()
@@ -215,7 +222,10 @@ async def on_ready():
     await bot.change_presence(activity=discord.CustomActivity(name='im cool 😎, ">" prefix'))
     for filename in os.listdir(f'{script_path}/cogs'):
         if filename.endswith('.py'):
-            await bot.load_extension(f'cogs.{filename[:-3]}')
+            try:
+                await bot.load_extension(f'cogs.{filename[:-3]}')
+            except commands.ExtensionAlreadyLoaded:
+                pass
     app = web.Application()
     app.router.add_get('/', web_status)
     runner = web.AppRunner(app)
