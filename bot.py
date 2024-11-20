@@ -1,5 +1,6 @@
 import discord, os, requests, dotenv
 from aiohttp import web
+from typing import Optional
 from discord.ext import commands
 from pymongo.server_api import ServerApi
 from pymongo.mongo_client import MongoClient
@@ -162,10 +163,16 @@ async def dm(ctx, member:discord.Member, *, content):
 
 @bot.hybrid_command(name="msg", help="Sends message as bot")
 @commands.is_owner()
-async def msg(ctx, *, content):
+async def msg(ctx, channel: Optional[discord.TextChannel] = None, *, content):
+    if not channel:
+        channel = ctx.channel
     if not ctx.interaction:
         await ctx.message.delete()
-    await ctx.send(content)
+    await ctx.send("Message should be sent", ephemeral = True, delete_after = 5)
+    if channel:
+        await channel.send(content)
+    else:
+        await ctx.send("Channel not found", ephemeral = True)
 
 @bot.hybrid_command(name="dmme", help="Sends a DM to the author")
 async def dmme(ctx, *, content):
