@@ -202,8 +202,6 @@ class NitroCog(commands.Cog):
                 channel = self.bot.get_channel(channel_id)
                 if channel:
                     nitro_count = self.bot.get_lines(0, 'nitro.txt')
-                    if not nitro_count:
-                        nitro_count = 'error'
                     embed = discord.Embed(title="Bot Status", description="Online 24/7, hosted somewhere...", color=discord.Color.random(), timestamp = datetime.datetime.now())
                     embed.add_field(name="Servers", value=f"{len(self.bot.guilds)}")
                     embed.add_field(name="Users", value=f"{len(self.bot.users)}")

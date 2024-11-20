@@ -59,10 +59,10 @@ class Bot(commands.Bot):
             response.raise_for_status()
             lines = response.text.splitlines()
             if not lines:
-                return '0'
-            if num_lines == 0: 
+                return 0
+            if num_lines == 0:
                 return len(lines)
-            if num_lines > len(lines): 
+            if num_lines > len(lines):
                 num_lines = len(lines)
             lines2 = lines[:num_lines]
             with open(temp_file, 'w') as f: f.write("\n".join(lines[num_lines:]))
