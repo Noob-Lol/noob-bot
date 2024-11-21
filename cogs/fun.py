@@ -3,7 +3,6 @@ from discord.ext import commands
 from discord import app_commands
 from gradio_client import Client
 
-banned_words = ['gay', "sex", 'nigg', 'porn', 'nude']
 class FunCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -64,6 +63,7 @@ class FunCog(commands.Cog):
     async def image(self, ctx, *, prompt: str, seed: int = 0, width: int = 1024, height: int = 1024, guidance_scale: float = 3.5, steps: int = 4, model: str = "schnell"):
         await ctx.defer()
         self.bot.log(f'{ctx.author}, prompt: {prompt}, seed: {seed}, width: {width}, height: {height}, guidance_scale: {guidance_scale},steps: {steps}, model: {model}', "log.txt")
+        banned_words = ['gay', 'sex', 'nigg', 'porn', 'nude', 'naked', 'hitler']
         if any(word in prompt.lower() for word in banned_words):
             duration = datetime.timedelta(seconds=120)
             await ctx.author.timeout(duration,reason="Banned word used")

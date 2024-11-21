@@ -163,21 +163,24 @@ async def dm(ctx, member:discord.Member, *, content):
 
 @bot.hybrid_command(name="msg", help="Sends message as bot")
 @commands.is_owner()
-async def msg(ctx, channel: Optional[discord.TextChannel] = None, *, content):
+async def msg(ctx, channel: Optional[discord.TextChannel] = None, *, text: str):
     if not channel:
         channel = ctx.channel
     if not ctx.interaction:
         await ctx.message.delete()
-    await ctx.send("Message should be sent", ephemeral = True, delete_after = 5)
+    message = await ctx.send("Message should be sent", ephemeral = True)
     if channel:
-        await channel.send(content)
+        try:
+            await channel.send(text)
+        except Exception as e:
+            await message.edit(content = f"Could not send message, {e}", ephemeral = True)
     else:
-        await ctx.send("Channel not found", ephemeral = True)
+        await message.edit(content = "Channel not found", ephemeral = True)
 
 @bot.hybrid_command(name="dmme", help="Sends a DM to the author")
-async def dmme(ctx, *, content):
+async def dmme(ctx, *, text: str):
     try:
-        await ctx.author.send(content)
+        await ctx.author.send(text)
         await ctx.send("DM was sent", ephemeral = True)
     except Exception as e:
         await ctx.send(f"Could not send DM, {e}", ephemeral = True)

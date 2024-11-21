@@ -114,11 +114,12 @@ class NitroCog(commands.Cog):
                 code = f'```{first_line[8::]}```'
                 if place == "dm":
                     try:
-                        await ctx.send("Sent code in dm.")
+                        if ctx.author.dm_channel is None:
+                            await ctx.author.create_dm()
                         await ctx.author.send(code)
+                        await ctx.send("Sent code in DM.")
                     except Exception as e:
-                        await ctx.send(f"Failed to send dm, sending code here. Error: {e}")
-                        await ctx.send(code)
+                        await ctx.send(f"Failed to send DM, sending code here. Error: {e}\n{code}")
                 else:
                     await ctx.send(code)
         else:
@@ -202,6 +203,8 @@ class NitroCog(commands.Cog):
                 channel = self.bot.get_channel(channel_id)
                 if channel:
                     nitro_count = self.bot.get_lines(0, 'nitro.txt')
+                    if nitro_count is None or not isinstance(nitro_count, int):
+                        nitro_count = 0
                     embed = discord.Embed(title="Bot Status", description="Online 24/7, hosted somewhere...", color=discord.Color.random(), timestamp = datetime.datetime.now())
                     embed.add_field(name="Servers", value=f"{len(self.bot.guilds)}")
                     embed.add_field(name="Users", value=f"{len(self.bot.users)}")
