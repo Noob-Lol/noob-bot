@@ -117,9 +117,9 @@ class NitroCog(commands.Cog):
                         if ctx.author.dm_channel is None:
                             await ctx.author.create_dm()
                         await ctx.author.send(code)
-                        await ctx.send("Sent code in DM.")
+                        await ctx.send("Sent code in dm.")
                     except Exception as e:
-                        await ctx.send(f"Failed to send DM, sending code here. Error: {e}\n{code}")
+                        await ctx.send(f"Failed to send dm, sending code here. Error: {e}\n{code}")
                 else:
                     await ctx.send(code)
         else:
