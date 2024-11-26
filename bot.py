@@ -1,4 +1,4 @@
-import discord, os, requests, dotenv
+import discord, os, requests, dotenv, platform
 from aiohttp import web
 from typing import Optional
 from discord.ext import commands
@@ -217,7 +217,18 @@ async def react(ctx):
         bot.react = True
         await ctx.send("Enabled reactions", delete_after=5, ephemeral = True)
 
-@bot.command(name= 'sync', help="Syncs commands")
+@bot.hybrid_command(name="info", help="Displays information about the bot")
+@commands.cooldown(1, 30, commands.BucketType.user)
+async def bot_info(ctx):
+    embed = discord.Embed(title="Bot info", color=discord.Color.random())
+    embed.add_field(name="Prefix", value=">")
+    embed.add_field(name="D.py version", value=discord.__version__)
+    embed.add_field(name="Python version", value=platform.python_version())
+    embed.add_field(name="Bot owner + dev", value="n01b")
+    embed.add_field(name="Source code", value="[GitHub](https://github.com/noob-lol/noob-bot)")
+    await ctx.send(embed=embed)
+
+@bot.command(name="sync", help="Syncs commands")
 @commands.is_owner()
 async def sync(ctx):
     await ctx.message.delete()         

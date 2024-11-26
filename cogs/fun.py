@@ -51,6 +51,14 @@ class FunCog(commands.Cog):
                 min, max = max, min
             await ctx.send(f"**{ctx.author.name}** rolled a **{random.randint(min, max)}**")
 
+    @commands.hybrid_command(name="joke", help="Sends a random joke")
+    async def joke(self, ctx):
+        joke = requests.get("https://v2.jokeapi.dev/joke/Any?blacklistFlags=nsfw,religious,political,racist,sexist,explicit").json()
+        if joke["type"] == "single":
+            await ctx.send(joke["joke"])
+        else:
+            await ctx.send(f"{joke['setup']}\n{joke['delivery']}")
+
     @commands.hybrid_command(name="image", help="Generates an image")
     @commands.cooldown(1, 30, commands.BucketType.user)
     @app_commands.describe(prompt="A prompt for the image", seed="default=random", width="default=1024", height="default=1024", guidance_scale="default=3.5, not used by schnell",steps="default=4", model="default=schnell")
