@@ -68,31 +68,33 @@ class EconomyCog(commands.Cog):
     async def leaderboard(self, ctx):
         await ctx.defer()
         users = self.collection.find({})
-        guild_members = {member.id for member in ctx.guild.members}
-        this_guild = [user for user in users if user["_id"] in guild_members]
+        this_guild = []
+        for user in users:
+            user_id = user["_id"]
+            member = ctx.guild.get_member(user_id)
+            if member:
+                user["member"] = member
+                this_guild.append(user)
         leaderboard = sorted(this_guild, key=lambda x: x.get("balance", 0), reverse=True)
         if not leaderboard:
             await ctx.send("No users found in the economy system.")
             return
-        page_size = 5
+        page_size, current_page = 5, 0
         total_pages = (len(leaderboard) // page_size) + (1 if len(leaderboard) % page_size > 0 else 0)
-        current_page = 0
         def build_embed(page):
             start = page * page_size
             end = start + page_size
             page_data = leaderboard[start:end]
             embed = discord.Embed(title="🏆 **Leaderboard** 🏆", description="Top Users:", color=discord.Color.yellow())
             for index, user in enumerate(page_data, start=start+1):
-                user_id = user["_id"]
+                member = user["member"]
                 balance = user["balance"]
-                member = ctx.guild.get_member(user_id)
-                username = member.name if member else "Unknown User"
+                username = member.name
                 embed.add_field(name=f"{index}. {username}", value=f"{balance} money", inline=False)
-            embed.set_footer(text=f"Page {page+1}/{total_pages}, timeout in 60 seconds")
+            embed.set_footer(text=f"Page {page+1}/{total_pages}, timeouts in 60 seconds")
             return embed
         async def update_embed(interaction, page):
-            view = build_view(page)
-            await interaction.response.edit_message(embed=build_embed(page), view=view)
+            await interaction.response.edit_message(embed=build_embed(page), view=build_view(page))
         def build_view(page):
             prev_button = Button(label="Previous", style=discord.ButtonStyle.primary, disabled=page == 0)
             next_button = Button(label="Next", style=discord.ButtonStyle.primary, disabled=page == total_pages - 1)
@@ -106,14 +108,9 @@ class EconomyCog(commands.Cog):
                 if current_page < total_pages - 1:
                     current_page += 1
                 await update_embed(interaction, current_page)
-            prev_button.callback = prev_callback
-            next_button.callback = next_callback
-            view = View(timeout=60)
-            view.add_item(prev_button)
-            view.add_item(next_button)
-            return view
-        view = build_view(current_page)
-        await ctx.send(embed=build_embed(current_page), view=view)
+            prev_button.callback, next_button.callback = prev_callback, next_callback
+            return View(timeout=60).add_item(prev_button).add_item(next_button)
+        await ctx.send(embed=build_embed(current_page), view=build_view(current_page))
 
 async def setup(bot):
     await bot.add_cog(EconomyCog(bot))
