@@ -1,5 +1,6 @@
 import discord, random
 from discord.ext import commands
+from discord.ui import View, Button
 
 class EconomyCog(commands.Cog):
     def __init__(self, bot):
@@ -67,18 +68,52 @@ class EconomyCog(commands.Cog):
     async def leaderboard(self, ctx):
         await ctx.defer()
         users = self.collection.find({})
-        leaderboard = sorted(users, key=lambda x: x.get("balance", 0), reverse=True)[:10]
+        guild_members = {member.id for member in ctx.guild.members}
+        this_guild = [user for user in users if user["_id"] in guild_members]
+        leaderboard = sorted(this_guild, key=lambda x: x.get("balance", 0), reverse=True)
         if not leaderboard:
             await ctx.send("No users found in the economy system.")
             return
-        leaderboard_message = "🏆 **Leaderboard** 🏆\n"
-        for index, user in enumerate(leaderboard, start=1):
-            user_id = user["_id"]
-            balance = user["balance"]
-            member = ctx.guild.get_member(user_id)
-            username = member.name if member else f"<User ID: {user_id}>"
-            leaderboard_message += f"{index}. {username} - {balance} money\n"
-        await ctx.send(leaderboard_message)
+        page_size = 5
+        total_pages = (len(leaderboard) // page_size) + (1 if len(leaderboard) % page_size > 0 else 0)
+        current_page = 0
+        def build_embed(page):
+            start = page * page_size
+            end = start + page_size
+            page_data = leaderboard[start:end]
+            embed = discord.Embed(title="🏆 **Leaderboard** 🏆", description="Top Users:", color=discord.Color.yellow())
+            for index, user in enumerate(page_data, start=start+1):
+                user_id = user["_id"]
+                balance = user["balance"]
+                member = ctx.guild.get_member(user_id)
+                username = member.name if member else "Unknown User"
+                embed.add_field(name=f"{index}. {username}", value=f"{balance} money", inline=False)
+            embed.set_footer(text=f"Page {page+1}/{total_pages}, timeout in 60 seconds")
+            return embed
+        async def update_embed(interaction, page):
+            view = build_view(page)
+            await interaction.response.edit_message(embed=build_embed(page), view=view)
+        def build_view(page):
+            prev_button = Button(label="Previous", style=discord.ButtonStyle.primary, disabled=page == 0)
+            next_button = Button(label="Next", style=discord.ButtonStyle.primary, disabled=page == total_pages - 1)
+            async def prev_callback(interaction):
+                nonlocal current_page
+                if current_page > 0:
+                    current_page -= 1
+                await update_embed(interaction, current_page)
+            async def next_callback(interaction):
+                nonlocal current_page
+                if current_page < total_pages - 1:
+                    current_page += 1
+                await update_embed(interaction, current_page)
+            prev_button.callback = prev_callback
+            next_button.callback = next_callback
+            view = View(timeout=60)
+            view.add_item(prev_button)
+            view.add_item(next_button)
+            return view
+        view = build_view(current_page)
+        await ctx.send(embed=build_embed(current_page), view=view)
 
 async def setup(bot):
     await bot.add_cog(EconomyCog(bot))
