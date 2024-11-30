@@ -1,4 +1,4 @@
-import discord, os, requests, dotenv, platform
+import discord, os, requests, dotenv
 from aiohttp import web
 from typing import Optional
 from discord.ext import commands
@@ -129,21 +129,6 @@ async def on_message(message):
             await message.add_reaction('☠️')
     await bot.process_commands(message)
 
-@bot.hybrid_command(name="add", help="Adds one to the database")
-@commands.cooldown(1, 5, commands.BucketType.user)
-async def add(ctx):
-    counter.find_one_and_update({'_id': 'counter'}, {'$inc': {'count': 1}}, upsert=True)
-    result = counter.find_one({'_id': 'counter'})
-    if result:
-        await ctx.send(f'Counter incremented to {result["count"]}')
-
-@bot.hybrid_command(name="hybrid", help="Hybrid test")
-async def hybrid_command(ctx):
-    if ctx.interaction:
-        await ctx.send("This is a slash command!")
-    else:
-        await ctx.send("This is a regular command!")
-
 @bot.hybrid_command(name="hi", help="Says hello")
 async def hi(ctx):
     await ctx.send(f'Hello!')
@@ -177,14 +162,6 @@ async def msg(ctx, channel: Optional[discord.TextChannel] = None, *, text: str):
     else:
         await message.edit(content = "Channel not found", ephemeral = True)
 
-@bot.hybrid_command(name="dmme", help="Sends a DM to the author")
-async def dmme(ctx, *, text: str):
-    try:
-        await ctx.author.send(text)
-        await ctx.send("DM was sent", ephemeral = True)
-    except Exception as e:
-        await ctx.send(f"Could not send DM, {e}", ephemeral = True)
-
 @bot.hybrid_command(name="enable", help="Enables commands in a channel")
 @commands.has_permissions(administrator=True)
 async def enable_channel(ctx):
@@ -217,17 +194,6 @@ async def react(ctx):
         bot.react = True
         await ctx.send("Enabled reactions", delete_after=5, ephemeral = True)
 
-@bot.hybrid_command(name="info", help="Displays information about the bot")
-@commands.cooldown(1, 30, commands.BucketType.user)
-async def bot_info(ctx):
-    embed = discord.Embed(title="Bot info", color=discord.Color.random())
-    embed.add_field(name="Prefix", value=">")
-    embed.add_field(name="D.py version", value=discord.__version__)
-    embed.add_field(name="Python version", value=platform.python_version())
-    embed.add_field(name="Bot owner + dev", value="n01b")
-    embed.add_field(name="Source code", value="[GitHub](https://github.com/noob-lol/noob-bot)")
-    await ctx.send(embed=embed)
-
 @bot.command(name="sync", help="Syncs commands")
 @commands.is_owner()
 async def sync(ctx):
@@ -235,7 +201,7 @@ async def sync(ctx):
     await bot.tree.sync()      
     await ctx.send("Synced!", delete_after=3)
 
-async def web_status(self):
+async def web_status(_):
     return web.Response(text='OK')
 
 @bot.event
