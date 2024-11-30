@@ -6,27 +6,28 @@ from gradio_client import Client
 class FunCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.hf_token = os.environ['HF_TOKEN']
         bot.loop.run_in_executor(None, self.load_merged)
         bot.loop.run_in_executor(None, self.load_dev)
         bot.loop.run_in_executor(None, self.load_schnell)
 
     def load_merged(self):
         try:
-            self.merged = Client("multimodalart/FLUX.1-merged")
+            self.merged = Client("multimodalart/FLUX.1-merged", self.hf_token)
         except Exception as e:
             print(f'Merged model failed to load: {e}')
             self.merged = None
 
     def load_dev(self):
         try:
-            self.dev = Client("black-forest-labs/FLUX.1-dev")
+            self.dev = Client("black-forest-labs/FLUX.1-dev", self.hf_token)
         except Exception as e:
             print(f'Dev model failed to load: {e}')
             self.dev = None
 
     def load_schnell(self):
         try:
-            self.schnell = Client("black-forest-labs/FLUX.1-schnell")
+            self.schnell = Client("black-forest-labs/FLUX.1-schnell", self.hf_token)
         except Exception as e:
             print(f'Schnell model failed to load: {e}')
             self.schnell = None
