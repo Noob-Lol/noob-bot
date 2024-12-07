@@ -37,7 +37,6 @@ class MiscCog(commands.Cog):
     @commands.hybrid_command(name="weather", help="Sends the weather for a city")
     @app_commands.describe(city="City name")
     async def weather(self, ctx, *, city: str):
-        await ctx.defer()
         headers = {
              # this is not my api key
             "X-RapidAPI-Key": "f77c5bde9bmsh775458a2f3f1651p175e25jsn8b6a2f52c501",
@@ -52,7 +51,7 @@ class MiscCog(commands.Cog):
         embed.add_field(name="Feels like", value=f"{weather['current']['feelslike_c']}℃")
         for i in range(3):
             forecast = weather['forecast']['forecastday'][i]
-            embed.add_field(name=forecast['date'], value=f"{forecast['day']['maxtemp_c']} ~ {forecast['day']['mintemp_c']}℃, Rain Chance: {forecast['day']['daily_chance_of_rain']}", inline=False)
+            embed.add_field(name=forecast['date'], value=f"{forecast['day']['maxtemp_c']} ~ {forecast['day']['mintemp_c']}℃, rain chance: {forecast['day']['daily_chance_of_rain']}", inline=False)
         await ctx.send(embed=embed)
 
 async def setup(bot):

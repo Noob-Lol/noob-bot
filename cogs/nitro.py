@@ -42,6 +42,9 @@ class NitroCog(commands.Cog):
             await ctx.send("Amount can't be negative.")
             return
         lines = self.bot.get_lines(0, 'nitro.txt')
+        if lines == 'error':
+            await ctx.send("There was an error getting the codes.")
+            return
         if lines > 0:
             if amount == 0:
                 await ctx.send(f"There are {lines} codes available.")
@@ -203,8 +206,6 @@ class NitroCog(commands.Cog):
                 channel = self.bot.get_channel(channel_id)
                 if channel:
                     nitro_count = self.bot.get_lines(0, 'nitro.txt')
-                    if nitro_count is None or not isinstance(nitro_count, int):
-                        nitro_count = 0
                     embed = discord.Embed(title="Bot Status", description="Online 24/7, hosted somewhere...", color=discord.Color.random(), timestamp = datetime.datetime.now())
                     embed.add_field(name="Servers", value=f"{len(self.bot.guilds)}")
                     embed.add_field(name="Users", value=f"{len(self.bot.users)}")

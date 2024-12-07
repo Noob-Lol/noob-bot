@@ -48,15 +48,15 @@ class Bot(commands.Bot):
     
     def get_lines(self, num_lines, file, temp_file='temp2.txt'):
         try:
-            response = requests.get(f"{api}/listfolder", params={'path': f'/{folder}', 'auth': PTOKEN})
+            response = requests.get(f"{api}/listfolder", params={'path': f'/{folder}', 'auth': PTOKEN}, timeout=5)
             files = response.json().get('metadata', {}).get('contents', [])
             file_info = next((f for f in files if f['name'] == file), None)
             if not file_info:
                 print(f"File '{file}' not found in folder '{folder}'.")
-                return
-            file_url = requests.get(f"{api}/getfilelink", params={'fileid': file_info['fileid'], 'auth': PTOKEN}).json()
+                return 'error'
+            file_url = requests.get(f"{api}/getfilelink", params={'fileid': file_info['fileid'], 'auth': PTOKEN}, timeout=5).json()
             download_url = file_url['hosts'][0] + file_url['path']
-            response = requests.get(f'https://{download_url}')
+            response = requests.get(f'https://{download_url}', timeout=5)
             response.raise_for_status()
             lines = response.text.splitlines()
             if not lines:
@@ -68,11 +68,12 @@ class Bot(commands.Bot):
             lines2 = lines[:num_lines]
             with open(temp_file, 'w') as f: f.write("\n".join(lines[num_lines:]))
             with open(temp_file, 'rb') as f:
-                requests.post(f"{api}/uploadfile", files={'filename': (file, f)}, data={'path': f'/{folder}', 'auth': PTOKEN})
+                requests.post(f"{api}/uploadfile", files={'filename': (file, f)}, data={'path': f'/{folder}', 'auth': PTOKEN}, timeout=5)
             os.remove(temp_file)
             return lines2
         except Exception as e:
             print(e)
+            return 'error'
     
     def check_boost(self, guild_id, member_id):
         response = requests.get(f'https://discord.com/api/v10/guilds/{guild_id}/premium/subscriptions', headers={'authorization': RTOKEN}).json()
