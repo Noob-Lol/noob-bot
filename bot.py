@@ -33,18 +33,22 @@ class Bot(commands.Bot):
         self.react = False
 
     def log(self, text, file, temp_file='temp.txt'):
-        response = requests.get(f"{api}/listfolder", params={'path': f'/{folder}', 'auth': PTOKEN})
-        files = response.json().get('metadata', {}).get('contents', [])
-        file_info = next((f for f in files if f['name'] == file), None)
-        if file_info:
-            file_url = requests.get(f"{api}/getfilelink", params={'fileid': file_info['fileid'], 'auth': PTOKEN}).json()
-            download_url = file_url['hosts'][0] + file_url['path']
-            with open(temp_file, 'wb') as f:
-                f.write(requests.get(f'https://{download_url}').content)
-        with open(temp_file, 'a') as f: f.write(f"{text}\n")
-        with open(temp_file, 'rb') as f:
-            requests.post(f"{api}/uploadfile", files={'filename': (file, f)}, data={'path': f'/{folder}', 'auth': PTOKEN})
-        os.remove(temp_file)
+        try:
+            response = requests.get(f"{api}/listfolder", params={'path': f'/{folder}', 'auth': PTOKEN}, timeout=5)
+            files = response.json().get('metadata', {}).get('contents', [])
+            file_info = next((f for f in files if f['name'] == file), None)
+            if file_info:
+                file_url = requests.get(f"{api}/getfilelink", params={'fileid': file_info['fileid'], 'auth': PTOKEN}, timeout=5).json()
+                download_url = file_url['hosts'][0] + file_url['path']
+                with open(temp_file, 'wb') as f:
+                    f.write(requests.get(f'https://{download_url}', timeout=5).content)
+            with open(temp_file, 'a') as f: f.write(f"{text}\n")
+            with open(temp_file, 'rb') as f:
+                requests.post(f"{api}/uploadfile", files={'filename': (file, f)}, data={'path': f'/{folder}', 'auth': PTOKEN}, timeout=5)
+            os.remove(temp_file)
+        except Exception as e:
+            print(e)
+            return 'error'
     
     def get_lines(self, num_lines, file, temp_file='temp2.txt'):
         try:

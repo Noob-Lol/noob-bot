@@ -1,4 +1,4 @@
-import discord, random, requests, os, time, datetime
+import discord, random, requests, os, time, datetime, re
 from discord.ext import commands
 from discord import app_commands
 from gradio_client import Client
@@ -10,6 +10,7 @@ class FunCog(commands.Cog):
         bot.loop.run_in_executor(None, self.load_merged)
         bot.loop.run_in_executor(None, self.load_dev)
         bot.loop.run_in_executor(None, self.load_schnell)
+        bot.loop.run_in_executor(None, self.load_banned_words)
 
     def load_merged(self):
         try:
@@ -31,6 +32,21 @@ class FunCog(commands.Cog):
         except Exception as e:
             print(f'Schnell model failed to load: {e}')
             self.schnell = None
+
+    def load_banned_words(self, link = ''):
+        if link == '':
+            banned_words_link = os.environ['BW_LINK']
+        else:
+            banned_words_link = link
+        try:
+            response = requests.get(banned_words_link, timeout=5)
+            response.raise_for_status()
+            self.banned_words = response.text.splitlines()
+            print(f'Loaded {len(self.banned_words)} banned words')
+        except Exception as e:
+            print(f'Failed to load banned words: {e}')
+            if not self.banned_words:
+                self.banned_words = None
 
     @commands.hybrid_command(name="cat", help="Sends a random cat image")
     async def cat(self, ctx):
@@ -70,14 +86,25 @@ class FunCog(commands.Cog):
             app_commands.Choice(name="dev", value="dev")
         ])
     async def image(self, ctx, *, prompt: str, seed: int = 0, width: int = 1024, height: int = 1024, guidance_scale: float = 3.5, steps: int = 4, model: str = "schnell"):
+        if await self.bot.is_owner(ctx.author):
+            ctx.command.reset_cooldown(ctx)
         await ctx.defer()
-        self.bot.log(f'{ctx.author}, prompt: {prompt}, seed: {seed}, width: {width}, height: {height}, guidance_scale: {guidance_scale},steps: {steps}, model: {model}', "log.txt")
-        banned_words = ['gay', 'sex', 'nigg', 'porn', 'nude', 'naked', 'hitler']
-        if any(word in prompt.lower() for word in banned_words):
-            duration = datetime.timedelta(seconds=120)
-            await ctx.author.timeout(duration,reason="Banned word used")
-            await ctx.send("Banned word used, you have been timed out.")
+        log = self.bot.log(f'{ctx.author}, prompt: {prompt}, seed: {seed}, width: {width}, height: {height}, guidance_scale: {guidance_scale},steps: {steps}, model: {model}', "log.txt")
+        if self.banned_words:
+            words = re.findall(r'\b\w+\b', prompt.lower())
+            if any(word in words for word in self.banned_words):
+                if ctx.author.guild_permissions.administrator:
+                    await ctx.send("Banned word used, but you are admin.", delete_after=10)
+                    return
+                duration = datetime.timedelta(seconds=120)
+                await ctx.author.timeout(duration,reason="Banned word used")
+                await ctx.send("Banned word used, you have been timed out.")
+                return
+        else:
+            await ctx.send("Banned words not loaded, cant generate image.")
             return
+        if log == 'error':
+            print("Error logging")
         rand = True
         if seed != 0:
             rand = False
@@ -104,6 +131,14 @@ class FunCog(commands.Cog):
                 await ctx.send(f"Error while cleaning up: {e}")
         else:
             await ctx.send("Sorry, there was an issue generating the image.")
+
+    @commands.hybrid_command(name="bw_refresh", help="Refreshes the banned words list")
+    @commands.is_owner()
+    async def bw_refresh(self, ctx, link: str = ''):
+        if not ctx.interaction:
+            await ctx.message.delete()
+        self.load_banned_words(link)
+        await ctx.send("Banned words refreshed.", delete_after=10)
 
 async def setup(bot):
     await bot.add_cog(FunCog(bot))
