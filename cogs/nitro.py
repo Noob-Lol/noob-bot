@@ -30,6 +30,8 @@ class NitroCog(commands.Cog):
     )
     async def nitro(self, ctx, amount: int = p(desc1, 1), place: str = p(desc2, "channel")):
         if os.path.exists(f'{self.bot.script_path}/lock.txt'):
+            if not ctx.interaction:
+                await ctx.message.delete()
             await ctx.send('The bot is in maintenance, please retry later.', delete_after=10)
             return
         place = place.lower() 
@@ -98,10 +100,14 @@ class NitroCog(commands.Cog):
                 self.bot.counter.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': count}}, upsert=True)
                 self.count += count
                 codes = '\n'.join(codes)
-                self.bot.log(f'{ctx.author.name} got {count} nitro codes: {codes}', 'nitro_log.txt')
+                log = self.bot.log(f'{ctx.author.name} got {count} nitro codes: {codes}', 'nitro_log.txt')
+                if log == 'error':
+                    print("Error logging nitro codes.")
                 codes = f'```{codes}```'
                 if place == "dm":
                     try:
+                        if ctx.author.dm_channel is None:
+                            await ctx.author.create_dm()
                         await ctx.send(f"Sent {count} codes in dm.")
                         await ctx.author.send(codes)
                     except Exception as e:
@@ -126,6 +132,8 @@ class NitroCog(commands.Cog):
                 else:
                     await ctx.send(code)
         else:
+            if not ctx.interaction:
+                await ctx.message.delete()
             await ctx.send("No nitro codes left.", delete_after=10)
 
     @nitro.error
