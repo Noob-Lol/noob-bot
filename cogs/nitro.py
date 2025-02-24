@@ -16,6 +16,9 @@ class NitroCog(commands.Cog):
         self.limit = bot.counter.find_one({'_id': 'nitro_limit'})['count']
         self.b1mult = bot.counter.find_one({'_id': 'b1mult'})['count']
         self.b2mult = bot.counter.find_one({'_id': 'b2mult'})['count']
+        self.nitro_toggle = bot.counter.find_one({'_id': 'nitro_toggle'})['state'] if bot.counter.find_one({'_id': 'nitro_toggle'}) else True
+        if not self.nitro_toggle:
+            print("[Warn] Nitro commands are disabled.")
         self.update_embed.start()
         self.cleanup_old_limits.start()
 
@@ -29,6 +32,10 @@ class NitroCog(commands.Cog):
         ]
     )
     async def nitro(self, ctx, amount: int = p(desc1, 1), place: str = p(desc2, "channel")):
+        if not self.nitro_toggle:
+            if not ctx.interaction: await ctx.message.delete()
+            await self.bot.respond(ctx, "Nitro commands are disabled.")
+            return
         if os.path.exists(f'{self.bot.script_path}/lock.txt'):
             if not ctx.interaction:
                 await ctx.message.delete()
@@ -171,11 +178,19 @@ class NitroCog(commands.Cog):
     
     @commands.hybrid_command(name="what", help="View nitro limit.")
     async def get_limit(self, ctx):
+        if not self.nitro_toggle:
+            if not ctx.interaction: await ctx.message.delete()
+            await self.bot.respond(ctx, "Nitro commands are disabled.")
+            return
         await ctx.send(f"Current nitro limit (daily): {self.limit}, multipliers: 1 boost = {self.b1mult}, 2 boosts = {self.b2mult}")
 
     @commands.hybrid_command(name="usage", help="View nitro usage.")
     @commands.cooldown(1, 10, commands.BucketType.user)
     async def usage(self, ctx):
+        if not self.nitro_toggle:
+            if not ctx.interaction: await ctx.message.delete()
+            await self.bot.respond(ctx, "Nitro commands are disabled.")
+            return
         member = ctx.author
         today_dt = datetime.datetime.combine(datetime.date.today(), datetime.time(0, 0, 0))
         user_id = member.id
@@ -213,7 +228,10 @@ class NitroCog(commands.Cog):
                 message_id = setting['message_id']
                 channel = self.bot.get_channel(channel_id)
                 if channel:
-                    nitro_count = self.bot.get_lines(0, 'nitro.txt')
+                    if self.nitro_toggle:
+                        nitro_count = self.bot.get_lines(0, 'nitro.txt')
+                    else:
+                        nitro_count = "N/A"
                     embed = discord.Embed(title="Bot Status", description="Online 24/7, hosted somewhere...", color=discord.Color.random(), timestamp = datetime.datetime.now())
                     embed.add_field(name="Servers", value=f"{len(self.bot.guilds)}")
                     embed.add_field(name="Users", value=f"{len(self.bot.users)}")
@@ -267,6 +285,14 @@ class NitroCog(commands.Cog):
             if i['channel_id'] == ctx.channel.id:
                 self.embed_var.remove(i)
         await ctx.send(f"Embed updates disabled in {ctx.channel.mention}.", delete_after=5)
+
+    @commands.hybrid_command(name='nitrotoggle', help='Toggle nitro related commands.')
+    @commands.is_owner()
+    async def toggle_nitro(self, ctx):
+        if not ctx.interaction: await ctx.message.delete()
+        self.nitro_toggle = not self.nitro_toggle
+        self.bot.counter.find_one_and_update({'_id': 'nitro_toggle'}, {'$set': {'state': self.nitro_toggle}}, upsert=True)
+        await self.bot.respond(ctx, f"Nitro commands {'enabled' if self.nitro_toggle else 'disabled'}")
 
 async def setup(bot):
     await bot.add_cog(NitroCog(bot))

@@ -1,6 +1,7 @@
 import discord, os, requests, dotenv
 from aiohttp import web
 from typing import Optional
+from discord import app_commands
 from discord.ext import commands
 from pymongo.server_api import ServerApi
 from pymongo.mongo_client import MongoClient
@@ -14,9 +15,13 @@ api = 'https://eapi.pcloud.com'
 uri = os.environ["MONGODB_URI"]
 client = MongoClient(uri, server_api=ServerApi('1'))
 db = client["discord_bot"]
+unloaded_coll = db['unloaded_cogs']
+unloaded_cogs = {cog["cog"] for cog in unloaded_coll.find()}
 counter = db['counter']
 disabled_coll = db["disabled_channels"]
 disabled_channels = {channel["channel_id"] for channel in disabled_coll.find()}
+disabled_com_coll = db["disabled_commands"]
+disabled_commands = {command["command"] for command in disabled_com_coll.find()}
 try:
     client.admin.command('ping')
     print("Successfully connected to MongoDB!")
@@ -91,8 +96,18 @@ class Bot(commands.Bot):
         else:
             print(response)
             return False
+        
+    async def respond(self, ctx, text, delete_after=5, ephemeral=True):
+        # default respond function (saves space)
+        if ctx.interaction: await ctx.send(text, ephemeral = ephemeral)
+        else: await ctx.send(text, delete_after = delete_after)
 
 bot = Bot()
+
+def p(desc, default = None):
+    return commands.parameter(description=desc, default=default)
+
+descripts = {'type': 'The type of thing to toggle.', 'name': 'The name of the thing to toggle.'}
 
 @bot.check
 async def check_guild(ctx):
@@ -100,17 +115,22 @@ async def check_guild(ctx):
 
 @bot.check
 async def check_channel(ctx):
-    if ctx.channel.id in disabled_channels and ctx.command.name != 'enable':
+    if ctx.channel.id in disabled_channels and ctx.command.name != 'toggle':
         if ctx.interaction: 
             await ctx.send("This channel is disabled.", ephemeral = True)
         return False
     return True
 
 @bot.event
+async def on_command(ctx):
+    if await bot.is_owner(ctx.author):
+        ctx.command.reset_cooldown(ctx)
+
+@bot.event
 async def on_command_error(ctx, error):
     if hasattr(ctx.command, 'on_error') and not hasattr(ctx, 'unhandled_error'):
         return
-    ignored = (commands.CommandNotFound, )
+    ignored = (commands.CommandNotFound, app_commands.errors.CommandNotFound, )
     error = getattr(error, 'original', error)
     if isinstance(error, ignored):
         return
@@ -147,57 +167,93 @@ async def ping(ctx):
 async def dm(ctx, member:discord.Member, *, content):
     try:
         await member.send(content)
-        await ctx.send("DM was sent", ephemeral = True)
+        await bot.respond(ctx, "DM was sent")
     except Exception as e:
-        await ctx.send(f"Could not send DM, {e}", ephemeral = True)
+        await bot.respond(ctx, f"Could not send DM, {e}")
 
 @bot.hybrid_command(name="msg", help="Sends message as bot")
 @commands.is_owner()
 async def msg(ctx, channel: Optional[discord.TextChannel] = None, *, text: str):
     if not channel:
         channel = ctx.channel
+        if not channel: return
     if not ctx.interaction:
         await ctx.message.delete()
-    message = await ctx.send("Message should be sent", ephemeral = True)
-    if channel:
-        try:
-            await channel.send(text)
-        except Exception as e:
-            await message.edit(content = f"Could not send message, {e}", ephemeral = True)
-    else:
-        await message.edit(content = "Channel not found", ephemeral = True)
+    try:
+        await channel.send(text)
+        await bot.respond(ctx, "Message sent")
+    except Exception as e:
+        await bot.respond(ctx, f"Could not send message, {e}")
 
-@bot.hybrid_command(name="enable", help="Enables commands in a channel")
-@commands.has_permissions(administrator=True)
-async def enable_channel(ctx):
-    result = disabled_coll.delete_one({"channel_id": ctx.channel.id})
-    if result.deleted_count > 0:
-        disabled_channels.remove(ctx.channel.id)
-        await ctx.send("This channel has been enabled for bot commands.")
-    else:
-        await ctx.send("This channel is not disabled.")
-
-@bot.hybrid_command(name="disable", help="Disables commands in a channel")
-@commands.has_permissions(administrator=True)
-async def disable_channel(ctx):
-    if ctx.channel.id in disabled_channels:
-        await ctx.send("This channel is already disabled.")
-    else:
-        disabled_coll.insert_one({"channel_id": ctx.channel.id})
-        disabled_channels.add(ctx.channel.id)
-        await ctx.send("This channel has been disabled for bot commands.")
-
-@bot.hybrid_command(name="react", help="Toggles reaction")
+@bot.hybrid_command(name="toggle", help="Toggles alot of things (owner only)")
+# combined multiple toggles into one
 @commands.is_owner()
-async def react(ctx):
+@app_commands.describe(type=descripts['type'], name=descripts['name'])
+@app_commands.choices(
+    type = [
+        app_commands.Choice(name = 'cog', value = 'cog'),
+        app_commands.Choice(name = 'channel', value = 'channel'),
+        app_commands.Choice(name = 'command', value = 'command'),
+        app_commands.Choice(name = 'react', value = 'react')
+    ]
+)
+async def toggle_thing(ctx, type: str = p(descripts['type']), name: Optional[str] = p(descripts['name'])):
     if not ctx.interaction:
         await ctx.message.delete()
-    if bot.react:
-        bot.react = False
-        await ctx.send("Disabled reactions", delete_after=5, ephemeral = True)
-    else:
-        bot.react = True
-        await ctx.send("Enabled reactions", delete_after=5, ephemeral = True)
+    if type == 'cog':
+        cog = name
+        if not cog:
+            await bot.respond(ctx, "Please provide a cog name.")
+            return
+        try:
+            cog_name = ''
+            for key, _ in bot.cogs.items():
+                if cog.lower() in key.lower():
+                    cog_name = key
+                    break
+            if cog_name in bot.cogs:
+                await bot.unload_extension(f'cogs.{cog}')
+                unloaded_coll.insert_one({"cog": cog})
+                await bot.respond(ctx, f"Disabled {cog}")
+            elif cog in unloaded_cogs:
+                await bot.load_extension(f'cogs.{cog}')
+                unloaded_coll.delete_one({"cog": cog})
+                await bot.respond(ctx, f"Enabled {cog}")
+            else:
+                await bot.respond(ctx, f"Cog not found: {cog}")
+        except Exception as e:
+            await bot.respond(ctx, f"Error: {e}", 10)
+    elif type == 'channel':
+        if ctx.channel.id in disabled_channels:
+            result = disabled_coll.delete_one({"channel_id": ctx.channel.id})
+            if result.deleted_count > 0:
+                disabled_channels.remove(ctx.channel.id)
+                await ctx.send("This channel has been enabled for bot commands.")
+        else:
+            disabled_coll.insert_one({"channel_id": ctx.channel.id})
+            disabled_channels.add(ctx.channel.id)
+            await ctx.send("This channel has been disabled for bot commands.")
+    elif type == 'react':
+        bot.react = not bot.react
+        await bot.respond(ctx, f"Reactions are now {'enabled' if bot.react else 'disabled'}")
+    elif type == 'command':
+        command = name
+        if not command:
+            await bot.respond(ctx, "Please provide a command name.")
+            return
+        found = bot.get_command(command)
+        if ctx.command == found:
+            await bot.respond(ctx, "You can't disable the toggle command.")
+            return
+        if not found:
+            await bot.respond(ctx, "Command not found.")
+            return
+        result = found.enabled = not found.enabled
+        if result:
+            disabled_com_coll.delete_one({"command": command})
+        else:
+            disabled_com_coll.insert_one({"command": command})
+        await bot.respond(ctx, f"Command {command} is now {'enabled' if result else 'disabled'}")
 
 @bot.command(name="sync", help="Syncs commands")
 @commands.is_owner()
@@ -212,10 +268,15 @@ async def web_status(_):
 @bot.event
 async def on_ready():
     await bot.change_presence(activity=discord.CustomActivity(name='im cool 😎, ">" prefix'))
+    skipped_cogs, dis_cmds = [], []
     for filename in os.listdir(f'{script_path}/cogs'):
-        if filename.endswith('.py'):
+        if filename.endswith('.py') and filename != '__init__.py':
+            cog_name = filename[:-3]
+            if cog_name in unloaded_cogs:
+                skipped_cogs.append(cog_name)
+                continue
             try:
-                await bot.load_extension(f'cogs.{filename[:-3]}')
+                await bot.load_extension(f'cogs.{cog_name}')
             except commands.ExtensionAlreadyLoaded:
                 pass
     app = web.Application()
@@ -224,5 +285,13 @@ async def on_ready():
     await runner.setup()
     await web.TCPSite(runner, '0.0.0.0', 8000).start()
     print(f'Logged in as {bot.user}')
+    if skipped_cogs:
+        print(f'Unloaded cogs: {", ".join(skipped_cogs)}')
+    for command in disabled_commands:
+        cmd = bot.get_command(command)
+        if cmd: cmd.enabled = False
+        dis_cmds.append(command)
+    if dis_cmds:
+        print(f'Disabled commands: {", ".join(dis_cmds)}')
 
 bot.run(TOKEN)

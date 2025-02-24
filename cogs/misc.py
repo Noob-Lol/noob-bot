@@ -19,9 +19,9 @@ class MiscCog(commands.Cog):
     async def dmme(self, ctx, *, text: str):
         try:
             await ctx.author.send(text)
-            await ctx.send("DM was sent", ephemeral = True)
+            await self.bot.respond(ctx, "DM was sent")
         except Exception as e:
-            await ctx.send(f"Could not send DM, {e}", ephemeral = True)
+            await self.bot.respond(ctx, f"Could not send DM, {e}")
 
     @commands.hybrid_command(name="info", help="Displays information about the bot")
     @commands.cooldown(1, 30, commands.BucketType.user)
@@ -39,10 +39,14 @@ class MiscCog(commands.Cog):
     async def weather(self, ctx, *, city: str):
         headers = {
              # this is not my api key
-            "X-RapidAPI-Key": "f77c5bde9bmsh775458a2f3f1651p175e25jsn8b6a2f52c501",
+            "X-RapidAPI-Key": "a3a7d073famsh43a70b10b861ed7p115a35jsnb340981d017b",
             "X-RapidAPI-Host": "weatherapi-com.p.rapidapi.com"
         }
         weather = requests.get("https://weatherapi-com.p.rapidapi.com/forecast.json", headers=headers, params={"q":city,"days":"3"}).json()
+        bad_json = {'message': 'This endpoint is disabled for your subscription'}
+        if weather == bad_json:
+            await ctx.send("This api key is cooked, owner needs to get a new one", ephemeral = True)
+            return
         embed = discord.Embed(title=f"Weather in {weather['location']['name']}, {weather['location']['country']}", color=discord.Color.blue())
         embed.add_field(name="Local Time", value=weather['location']['localtime'], inline=False)
         embed.add_field(name="Temperature", value=f"{weather['current']['temp_c']}℃")

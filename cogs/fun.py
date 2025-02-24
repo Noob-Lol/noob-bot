@@ -86,8 +86,6 @@ class FunCog(commands.Cog):
             app_commands.Choice(name="dev", value="dev")
         ])
     async def image(self, ctx, *, prompt: str, seed: int = 0, width: int = 1024, height: int = 1024, guidance_scale: float = 3.5, steps: int = 4, model: str = "schnell"):
-        if await self.bot.is_owner(ctx.author):
-            ctx.command.reset_cooldown(ctx)
         await ctx.defer()
         log = self.bot.log(f'{ctx.author}, prompt: {prompt}, seed: {seed}, width: {width}, height: {height}, guidance_scale: {guidance_scale},steps: {steps}, model: {model}', "log.txt")
         if self.banned_words:

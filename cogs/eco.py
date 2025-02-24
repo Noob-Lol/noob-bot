@@ -7,11 +7,11 @@ class EconomyCog(commands.Cog):
         self.bot = bot
         self.collection = bot.db["economy"]
 
-    @commands.hybrid_command(name="farm", help="Gives random money (1-1000)")
+    @commands.hybrid_command(name="farm", help="Gives random money (100-1000)")
     @commands.cooldown(1, 10, commands.BucketType.user)
     async def farm(self, ctx):
         user_id = ctx.author.id
-        amount = random.randint(1, 1000)
+        amount = random.randint(100, 1000)
         user = self.collection.find_one({"_id": user_id})
         if user:
             new_balance = user["balance"] + amount
@@ -66,7 +66,7 @@ class EconomyCog(commands.Cog):
     @commands.hybrid_command(name="leaderboard", help="Displays the leaderboard of top users")
     @commands.cooldown(1, 30, commands.BucketType.user)
     async def leaderboard(self, ctx):
-        await ctx.defer()
+        await ctx.defer(ephemeral=True)
         users = self.collection.find({})
         this_guild = []
         for user in users:
