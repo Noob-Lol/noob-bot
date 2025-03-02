@@ -9,6 +9,7 @@ def p(desc, default = None):
 class NitroCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.busy = False
         self.nitro_usage = bot.db['nitro_usage']
         self.embed_settings = bot.db['embed_settings']
         self.embed_var = list(self.embed_settings.find())
@@ -34,114 +35,113 @@ class NitroCog(commands.Cog):
     async def nitro(self, ctx, amount: int = p(desc1, 1), place: str = p(desc2, "channel")):
         if not self.nitro_toggle:
             if not ctx.interaction: await ctx.message.delete()
-            await self.bot.respond(ctx, "Nitro commands are disabled.")
-            return
+            return await self.bot.respond(ctx, "Nitro commands are disabled.")
         if os.path.exists(f'{self.bot.script_path}/lock.txt'):
-            if not ctx.interaction:
-                await ctx.message.delete()
-            await ctx.send('The bot is in maintenance, please retry later.', delete_after=10)
-            return
+            if not ctx.interaction: await ctx.message.delete()
+            return await self.bot.respond(ctx, 'The bot is in maintenance, please retry later.')
+        if self.busy:
+            if not ctx.interaction: await ctx.message.delete()
+            return await self.bot.respond(ctx, 'The bot is busy, please retry in a few seconds.')
         place = place.lower() 
         if place != "dm" and place != "channel":
-            await ctx.send("Invalid place. Must be 'dm' or 'channel'.", delete_after=10)
-            return
+            return await self.bot.respond(ctx, "Invalid place. Must be 'dm' or 'channel'.")
         if amount > 40:
             amount = 40
         if amount < 0:
-            await ctx.send("Amount can't be negative.")
-            return
-        lines = self.bot.get_lines(0, 'nitro.txt')
-        if lines == 'error':
-            await ctx.send("There was an error getting the codes.")
-            return
-        if lines > 0:
-            if amount == 0:
-                await ctx.send(f"There are {lines} codes available.")
-                return
-            if amount > lines:
-                amount = lines
-            if await self.bot.is_owner(ctx.author):
-                pass
-            else:
-                today_dt = datetime.datetime.combine(datetime.date.today(), datetime.time(0, 0, 0))
-                user_id = ctx.author.id
-                result = self.nitro_usage.find_one({'user_id': user_id, 'date': today_dt})
-                limit = self.limit
-                if result:
-                    rcount = result['count']
-                    if ctx.author.premium_since:
-                        boost_count = self.bot.check_boost(ctx.guild.id, user_id)
-                        if not boost_count:
-                            await ctx.send("There was an error getting your boost count.")
-                            return
-                        if boost_count == 1:
-                            limit *= self.b1mult
-                        elif boost_count >= 2:
-                            limit *= self.b2mult
-                    if rcount >= limit:
+            return await self.bot.respond(ctx, "Amount can't be negative.")
+        try:
+            lines = self.bot.get_lines(0, 'nitro.txt')
+            if lines == 'error':
+                return await ctx.send("There was an error getting the codes.")
+            if lines > 0:
+                if amount == 0:
+                    return await ctx.send(f"There are {lines} codes available.")
+                await ctx.defer()
+                self.busy = True
+                if amount > lines:
+                    amount = lines
+                if await self.bot.is_owner(ctx.author):
+                    pass
+                else:
+                    today_dt = datetime.datetime.combine(datetime.date.today(), datetime.time(0, 0, 0))
+                    user_id = ctx.author.id
+                    result = self.nitro_usage.find_one({'user_id': user_id, 'date': today_dt})
+                    limit = self.limit
+                    if result:
+                        rcount = result['count']
                         if ctx.author.premium_since:
+                            boost_count = self.bot.check_boost(ctx.guild.id, user_id)
+                            if not boost_count:
+                                return await ctx.send("There was an error getting your boost count.")
                             if boost_count == 1:
-                                await ctx.send("You have reached the daily limit. Try again tomorrow or boost again.", delete_after=15)
+                                limit *= self.b1mult
                             elif boost_count >= 2:
-                                await ctx.send("You have reached the daily limit. Try again tomorrow.", delete_after=15)
+                                limit *= self.b2mult
+                        if rcount >= limit:
+                            if ctx.author.premium_since:
+                                if boost_count == 1:
+                                    await ctx.send("You have reached the daily limit. Try again tomorrow or boost again.", delete_after=15)
+                                elif boost_count >= 2:
+                                    await ctx.send("You have reached the daily limit. Try again tomorrow.", delete_after=15)
+                            else:
+                                await ctx.send("You have reached the free limit. Try again tomorrow or boost the server.", delete_after=15)
+                            return
+                        elif rcount + amount > limit:
+                            amount = limit - rcount
+                    if amount > limit:
+                        amount = limit
+                    self.nitro_usage.update_one({'user_id': user_id, 'date': today_dt}, {'$inc': {'count': amount}}, upsert=True)
+                lines = self.bot.get_lines(amount, 'nitro.txt')
+                if amount > 1:
+                    codes = []  
+                    count = 0
+                    for line in lines:
+                        if line:
+                            codes.append(line[8::])
+                            count += 1
+                            if count == amount:
+                                break
                         else:
-                            await ctx.send("You have reached the free limit. Try again tomorrow or boost the server.", delete_after=15)
-                        return
-                    elif rcount + amount > limit:
-                        amount = limit - rcount
-                if amount > limit:
-                    amount = limit
-                self.nitro_usage.update_one({'user_id': user_id, 'date': today_dt}, {'$inc': {'count': amount}}, upsert=True)
-            lines = self.bot.get_lines(amount, 'nitro.txt')
-            if amount > 1:
-                codes = []  
-                count = 0
-                for line in lines:
-                    if line:
-                        codes.append(line[8::])
-                        count += 1
-                        if count == amount:
                             break
+                    self.bot.counter.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': count}}, upsert=True)
+                    self.count += count
+                    codes = '\n'.join(codes)
+                    log = self.bot.log(f'{ctx.author.name} got {count} nitro codes: {codes}', 'nitro_log.txt')
+                    if log == 'error':
+                        print("Error logging nitro codes.")
+                    codes = f'```{codes}```'
+                    if place == "dm":
+                        try:
+                            if ctx.author.dm_channel is None:
+                                await ctx.author.create_dm()
+                            await ctx.send(f"Sent {count} codes in dm.")
+                            await ctx.author.send(codes)
+                        except Exception as e:
+                            await ctx.send(f"Failed to send dm, sending codes here. Error: {e}")
+                            await ctx.send(codes)
                     else:
-                        break
-                self.bot.counter.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': count}}, upsert=True)
-                self.count += count
-                codes = '\n'.join(codes)
-                log = self.bot.log(f'{ctx.author.name} got {count} nitro codes: {codes}', 'nitro_log.txt')
-                if log == 'error':
-                    print("Error logging nitro codes.")
-                codes = f'```{codes}```'
-                if place == "dm":
-                    try:
-                        if ctx.author.dm_channel is None:
-                            await ctx.author.create_dm()
-                        await ctx.send(f"Sent {count} codes in dm.")
-                        await ctx.author.send(codes)
-                    except Exception as e:
-                        await ctx.send(f"Failed to send dm, sending codes here. Error: {e}")
                         await ctx.send(codes)
                 else:
-                    await ctx.send(codes)
+                    first_line = lines[0].strip()
+                    self.bot.counter.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': 1}}, upsert=True)
+                    self.count += 1
+                    self.bot.log(f'{ctx.author.name} got nitro code: {first_line}', 'nitro_log.txt')
+                    code = f'```{first_line[8::]}```'
+                    if place == "dm":
+                        try:
+                            if ctx.author.dm_channel is None:
+                                await ctx.author.create_dm()
+                            await ctx.author.send(code)
+                            await ctx.send("Sent code in dm.")
+                        except Exception as e:
+                            await ctx.send(f"Failed to send dm, sending code here. Error: {e}\n{code}")
+                    else:
+                        await ctx.send(code)
             else:
-                first_line = lines[0].strip()
-                self.bot.counter.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': 1}}, upsert=True)
-                self.count += 1
-                self.bot.log(f'{ctx.author.name} got nitro code: {first_line}', 'nitro_log.txt')
-                code = f'```{first_line[8::]}```'
-                if place == "dm":
-                    try:
-                        if ctx.author.dm_channel is None:
-                            await ctx.author.create_dm()
-                        await ctx.author.send(code)
-                        await ctx.send("Sent code in dm.")
-                    except Exception as e:
-                        await ctx.send(f"Failed to send dm, sending code here. Error: {e}\n{code}")
-                else:
-                    await ctx.send(code)
-        else:
-            if not ctx.interaction:
-                await ctx.message.delete()
-            await ctx.send("No nitro codes left.", delete_after=10)
+                if not ctx.interaction: await ctx.message.delete()
+                await self.bot.respond(ctx, "No nitro codes left.", 10)
+        finally:
+            self.busy = False
 
     @nitro.error
     async def nitro_error(self, ctx, error):
@@ -159,14 +159,11 @@ class NitroCog(commands.Cog):
     @commands.hybrid_command(name="limit", help="Set nitro limit and multipliers.")
     @commands.is_owner()
     async def set_limit(self, ctx, amount: int, limit: str = "nitro_limit"):
-        if not ctx.interaction:
-            await ctx.message.delete()
+        if not ctx.interaction: await ctx.message.delete()
         if amount < 1:
-            await ctx.send("Amount must be at least 1.", delete_after=10)
-            return
+            return await self.bot.respond(ctx, "Amount must be at least 1.", 10)
         if limit != "nitro_limit" and limit != "b1mult" and limit != "b2mult":
-            await ctx.send("Invalid limit choice.", delete_after=10)
-            return
+            return await self.bot.respond(ctx, "Invalid limit choice.", 10)
         if limit == "b1mult":
             self.b1mult = amount
         elif limit == "b2mult":
@@ -180,8 +177,7 @@ class NitroCog(commands.Cog):
     async def get_limit(self, ctx):
         if not self.nitro_toggle:
             if not ctx.interaction: await ctx.message.delete()
-            await self.bot.respond(ctx, "Nitro commands are disabled.")
-            return
+            return await self.bot.respond(ctx, "Nitro commands are disabled.")
         await ctx.send(f"Current nitro limit (daily): {self.limit}, multipliers: 1 boost = {self.b1mult}, 2 boosts = {self.b2mult}")
 
     @commands.hybrid_command(name="usage", help="View nitro usage.")
@@ -189,8 +185,7 @@ class NitroCog(commands.Cog):
     async def usage(self, ctx):
         if not self.nitro_toggle:
             if not ctx.interaction: await ctx.message.delete()
-            await self.bot.respond(ctx, "Nitro commands are disabled.")
-            return
+            return await self.bot.respond(ctx, "Nitro commands are disabled.")
         member = ctx.author
         today_dt = datetime.datetime.combine(datetime.date.today(), datetime.time(0, 0, 0))
         user_id = member.id
@@ -203,8 +198,7 @@ class NitroCog(commands.Cog):
             if member.premium_since:
                 boost_count = self.bot.check_boost(ctx.guild.id, member.id)
                 if not boost_count:
-                    await ctx.send("There was an error getting your boost count.")
-                    return
+                    return await ctx.send("There was an error getting your boost count.")
                 if boost_count == 1:
                     await ctx.send(f"1 boost. Your usage is {count}/{self.limit*self.b1mult}.")
                 elif boost_count == 2:
@@ -255,8 +249,7 @@ class NitroCog(commands.Cog):
         await ctx.message.delete()
         existing_entry = self.embed_settings.find_one({'guild_id': ctx.guild.id})
         if existing_entry:
-            await ctx.send("Embed updates are already enabled in this channel.", delete_after=5)
-            return
+            return await ctx.send("Embed updates are already enabled in this channel.", delete_after=5)
         embed = discord.Embed(title="Enabled embed updates", description="The main content will be here soon.", color=discord.Color.green())
         message = await ctx.send(embed=embed)
         self.embed_settings.insert_one({
@@ -273,8 +266,7 @@ class NitroCog(commands.Cog):
         await ctx.message.delete()
         existing_entry = self.embed_settings.find_one({'guild_id': ctx.guild.id})
         if not existing_entry:
-            await ctx.send("Embed updates are not enabled in this channel.", delete_after=5)
-            return
+            return await ctx.send("Embed updates are not enabled in this channel.", delete_after=5)
         try:
             message = await ctx.channel.fetch_message(existing_entry['message_id'])
             await message.delete()

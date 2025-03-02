@@ -7,31 +7,26 @@ class FunCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.hf_token = os.environ['HF_TOKEN']
-        bot.loop.run_in_executor(None, self.load_merged)
-        bot.loop.run_in_executor(None, self.load_dev)
-        bot.loop.run_in_executor(None, self.load_schnell)
+        self.merged, self.dev, self.schnell = None, None, None
+        bot.loop.run_in_executor(None, self.load_models)
         bot.loop.run_in_executor(None, self.load_banned_words)
 
-    def load_merged(self):
-        try:
-            self.merged = Client("multimodalart/FLUX.1-merged", self.hf_token)
-        except Exception as e:
-            print(f'Merged model failed to load: {e}')
-            self.merged = None
+    def load_models(self):
+        models = {
+        "multimodalart/FLUX.1-merged": "merged",
+        "black-forest-labs/FLUX.1-dev": "dev",
+        "black-forest-labs/FLUX.1-schnell": "schnell"
+        }
+        for model, name in models.items():
+            self.bot.loop.run_in_executor(None, self.load_one, model, name)
 
-    def load_dev(self):
+    def load_one(self, model_name, var_name):
         try:
-            self.dev = Client("black-forest-labs/FLUX.1-dev", self.hf_token)
+            model = Client(model_name, self.hf_token)
+            setattr(self, var_name, model)
         except Exception as e:
-            print(f'Dev model failed to load: {e}')
-            self.dev = None
-
-    def load_schnell(self):
-        try:
-            self.schnell = Client("black-forest-labs/FLUX.1-schnell", self.hf_token)
-        except Exception as e:
-            print(f'Schnell model failed to load: {e}')
-            self.schnell = None
+            print(f'Model {model_name} failed to load: {e}')
+            setattr(self, var_name, None)
 
     def load_banned_words(self, link = ''):
         if link == '':
@@ -114,8 +109,7 @@ class FunCog(commands.Cog):
         elif self.schnell and model == "schnell":
             result = await self.bot.loop.run_in_executor(None, self.schnell.predict,prompt,seed,rand,width,height,steps,"/infer")
         else:
-            await ctx.send("Error, this model failed to load.", delete_after=10)
-            return
+            return await ctx.send(f"Model {model} failed to load, try another one.", delete_after=10)
         image_path, seed = result
         if os.path.exists(image_path):
             gen_time = time.time() - start_time
