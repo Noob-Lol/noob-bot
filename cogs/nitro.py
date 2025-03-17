@@ -10,6 +10,7 @@ class NitroCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.busy = False
+        self.logger = self.bot.cog_logger(self.__class__.__name__)
         self.nitro_usage = bot.db['nitro_usage']
         self.embed_settings = bot.db['embed_settings']
         self.embed_var = list(self.embed_settings.find())
@@ -19,7 +20,7 @@ class NitroCog(commands.Cog):
         self.b2mult = bot.counter.find_one({'_id': 'b2mult'})['count']
         self.nitro_toggle = bot.counter.find_one({'_id': 'nitro_toggle'})['state'] if bot.counter.find_one({'_id': 'nitro_toggle'}) else True
         if not self.nitro_toggle:
-            print("[Warn] Nitro commands are disabled.")
+            self.logger.warning("Nitro commands are disabled.")
         self.update_embed.start()
         self.cleanup_old_limits.start()
 
@@ -51,7 +52,7 @@ class NitroCog(commands.Cog):
             return await self.bot.respond(ctx, "Amount can't be negative.")
         try:
             lines = self.bot.get_lines(0, 'nitro.txt')
-            if lines == 'error':
+            if not lines:
                 return await ctx.send("There was an error getting the codes.")
             if lines > 0:
                 if amount == 0:
@@ -106,9 +107,7 @@ class NitroCog(commands.Cog):
                     self.bot.counter.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': count}}, upsert=True)
                     self.count += count
                     codes = '\n'.join(codes)
-                    log = self.bot.log(f'{ctx.author.name} got {count} nitro codes: {codes}', 'nitro_log.txt')
-                    if log == 'error':
-                        print("Error logging nitro codes.")
+                    self.bot.log(f'{ctx.author.name} got {count} nitro codes: {codes}', 'nitro_log.txt')
                     codes = f'```{codes}```'
                     if place == "dm":
                         try:
@@ -236,12 +235,12 @@ class NitroCog(commands.Cog):
                     message = await channel.fetch_message(message_id)
                     await message.edit(embed=embed)
                 else:
-                    print(f"Bot does not have access to {channel_id}")
+                    self.logger.warning(f"Bot does not have access to {channel_id}")
         except discord.NotFound:
             self.embed_settings.delete_one({'guild_id': guild_id})
             self.embed_var.remove(setting)
         except Exception as e:
-            print(f"An error occurred: {e}")
+            self.logger.error(f"Error updating embed: {e}")
 
     @commands.command(name="embe", help="Enable embed updates in the current channel.")
     @commands.is_owner()

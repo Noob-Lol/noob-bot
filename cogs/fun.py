@@ -6,6 +6,7 @@ from gradio_client import Client
 class FunCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.logger = self.bot.cog_logger(self.__class__.__name__)
         self.hf_token = os.environ['HF_TOKEN']
         self.merged, self.dev, self.schnell = None, None, None
         bot.loop.run_in_executor(None, self.load_models)
@@ -25,7 +26,7 @@ class FunCog(commands.Cog):
             model = Client(model_name, self.hf_token)
             setattr(self, var_name, model)
         except Exception as e:
-            print(f'Model {model_name} failed to load: {e}')
+            self.logger.error(f'Model {model_name} failed to load: {e}')
             setattr(self, var_name, None)
 
     def load_banned_words(self, link = ''):
@@ -37,9 +38,9 @@ class FunCog(commands.Cog):
             response = requests.get(banned_words_link, timeout=5)
             response.raise_for_status()
             self.banned_words = response.text.splitlines()
-            print(f'Loaded {len(self.banned_words)} banned words')
+            self.logger.info(f'Loaded {len(self.banned_words)} banned words')
         except Exception as e:
-            print(f'Failed to load banned words: {e}')
+            self.logger.error(f'Failed to load banned words: {e}')
             if not self.banned_words:
                 self.banned_words = None
 
@@ -82,7 +83,7 @@ class FunCog(commands.Cog):
         ])
     async def image(self, ctx, *, prompt: str, seed: int = 0, width: int = 1024, height: int = 1024, guidance_scale: float = 3.5, steps: int = 4, model: str = "schnell"):
         await ctx.defer()
-        log = self.bot.log(f'{ctx.author}, prompt: {prompt}, seed: {seed}, width: {width}, height: {height}, guidance_scale: {guidance_scale},steps: {steps}, model: {model}', "log.txt")
+        self.bot.log(f'{ctx.author}, prompt: {prompt}, seed: {seed}, width: {width}, height: {height}, guidance_scale: {guidance_scale},steps: {steps}, model: {model}', "log.txt")
         if self.banned_words:
             words = re.findall(r'\b\w+\b', prompt.lower())
             if any(word in words for word in self.banned_words):
@@ -96,8 +97,6 @@ class FunCog(commands.Cog):
         else:
             await ctx.send("Banned words not loaded, cant generate image.")
             return
-        if log == 'error':
-            print("Error logging")
         rand = True
         if seed != 0:
             rand = False

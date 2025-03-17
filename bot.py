@@ -1,10 +1,12 @@
-import discord, os, requests, dotenv
+import discord, os, requests, dotenv, atexit, logging
 from aiohttp import web
 from typing import Optional
 from discord import app_commands
 from discord.ext import commands
 from pymongo.server_api import ServerApi
 from pymongo.mongo_client import MongoClient
+logger = logging.getLogger('discord.n01b')
+logger.name = 'bot.main'
 dotenv.load_dotenv()
 script_path = os.path.dirname(__file__)
 TOKEN = os.environ["TOKEN"]
@@ -24,9 +26,9 @@ disabled_com_coll = db["disabled_commands"]
 disabled_commands = {command["command"] for command in disabled_com_coll.find()}
 try:
     client.admin.command('ping')
-    print("Successfully connected to MongoDB!")
+    logger.info("Successfully connected to MongoDB!")
 except Exception as e:
-    print(e)
+    logger.error('Error connecting to MongoDB:', e)
 
 class Bot(commands.Bot):
     def __init__(self):
@@ -36,6 +38,11 @@ class Bot(commands.Bot):
         self.db = db
         self.counter = counter
         self.react = False
+
+    def cog_logger(self, cog_name: str):
+        l = logging.getLogger(f'discord.n01b.{cog_name}')
+        l.name = f'bot.{cog_name}'
+        return l
 
     def log(self, text, file, temp_file='temp.txt'):
         try:
@@ -52,8 +59,7 @@ class Bot(commands.Bot):
                 requests.post(f"{api}/uploadfile", files={'filename': (file, f)}, data={'path': f'/{folder}', 'auth': PTOKEN}, timeout=5)
             os.remove(temp_file)
         except Exception as e:
-            print(e)
-            return 'error'
+            logger.error(f'Error logging to {file}: {e}')
     
     def get_lines(self, num_lines, file, temp_file='temp2.txt'):
         try:
@@ -61,8 +67,8 @@ class Bot(commands.Bot):
             files = response.json().get('metadata', {}).get('contents', [])
             file_info = next((f for f in files if f['name'] == file), None)
             if not file_info:
-                print(f"File '{file}' not found in folder '{folder}'.")
-                return 'error'
+                logger.error(f"File '{file}' not found in folder '{folder}'.")
+                return []
             file_url = requests.get(f"{api}/getfilelink", params={'fileid': file_info['fileid'], 'auth': PTOKEN}, timeout=5).json()
             download_url = file_url['hosts'][0] + file_url['path']
             response = requests.get(f'https://{download_url}', timeout=5)
@@ -81,11 +87,11 @@ class Bot(commands.Bot):
             os.remove(temp_file)
             return lines2
         except Exception as e:
-            print(e)
-            return 'error'
+            logger.error(f'Error getting lines from {file}: {e}')
+            return []
     
     def check_boost(self, guild_id, member_id):
-        response = requests.get(f'https://discord.com/api/v10/guilds/{guild_id}/premium/subscriptions', headers={'authorization': RTOKEN}).json()
+        response = requests.get(f'https://discord.com/api/v10/guilds/{guild_id}/premium/subscriptions', headers={'authorization': RTOKEN}, timeout=5).json()
         if isinstance(response, list):
             boost_count = 0
             for boost in response:
@@ -94,7 +100,7 @@ class Bot(commands.Bot):
                     boost_count += 1
             return boost_count
         else:
-            print(response)
+            logger.error(f'Error getting boost count for user {member_id}: {response}')
             return False
         
     async def respond(self, ctx, text, delete_after=5, ephemeral=True):
@@ -103,6 +109,10 @@ class Bot(commands.Bot):
         else: await ctx.send(text, delete_after = delete_after)
 
 bot = Bot()
+
+@atexit.register
+def on_exit():
+    logger.info("Stopped.")
 
 def p(desc, default = None):
     return commands.parameter(description=desc, default=default)
@@ -138,7 +148,7 @@ async def on_command_error(ctx, error):
         if ctx.guild is None:
             await ctx.send("You can't use commands in DMs.", ephemeral = True)
     elif isinstance(error, discord.HTTPException) and error.status == 429:
-        print(f"Rate limited. Retry in {error.response.headers['Retry-After']} seconds.")
+        logger.warning(f"Rate limited. Retry in {error.response.headers['Retry-After']} seconds.")
     elif isinstance(error, commands.CommandOnCooldown):
         await ctx.send(f"This command is on cooldown. Please wait {error.retry_after:.2f}s", ephemeral = True, delete_after = 5)
     else: await ctx.send(error, ephemeral = True)
@@ -186,7 +196,6 @@ async def msg(ctx, channel: Optional[discord.TextChannel] = None, *, text: str):
         await bot.respond(ctx, f"Could not send message, {e}")
 
 @bot.hybrid_command(name="toggle", help="Toggles alot of things (owner only)")
-# combined multiple toggles into one
 @commands.is_owner()
 @app_commands.describe(type=descripts['type'], name=descripts['name'])
 @app_commands.choices(
@@ -284,14 +293,14 @@ async def on_ready():
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, '0.0.0.0', 8000).start()
-    print(f'Logged in as {bot.user}')
+    logger.info(f'Logged in as {bot.user}')
     if skipped_cogs:
-        print(f'Unloaded cogs: {", ".join(skipped_cogs)}')
+        logger.info(f'Unloaded cogs: {", ".join(skipped_cogs)}')
     for command in disabled_commands:
         cmd = bot.get_command(command)
         if cmd: cmd.enabled = False
         dis_cmds.append(command)
     if dis_cmds:
-        print(f'Disabled commands: {", ".join(dis_cmds)}')
+        logger.info(f'Disabled commands: {", ".join(dis_cmds)}')
 
 bot.run(TOKEN)
