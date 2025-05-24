@@ -51,7 +51,7 @@ class Bot(commands.Bot):
 
     async def log(self, text, file):
         try:
-            temp_file = tempfile.TemporaryFile(delete=False).name
+            temp_file = tempfile.NamedTemporaryFile(delete=False).name
             async with aiohttp.ClientSession() as session:
                 async with session.get(f"{api}/listfolder", params={'path': f'/{folder}', 'auth': PTOKEN}, timeout=def_TO) as response:
                     response_json = await response.json()
@@ -79,7 +79,7 @@ class Bot(commands.Bot):
     
     async def get_lines(self, num_lines, file):
         try:
-            temp_file = tempfile.TemporaryFile(delete=False).name
+            temp_file = tempfile.NamedTemporaryFile(delete=False).name
             async with aiohttp.ClientSession() as session:
                 async with session.get(f"{api}/listfolder", params={'path': f'/{folder}', 'auth': PTOKEN}, timeout=def_TO) as response:
                     files = await response.json()
