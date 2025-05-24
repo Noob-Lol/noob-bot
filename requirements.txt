@@ -2,3 +2,4 @@ discord-py
 python-dotenv
 pymongo
 gradio_client
+openai
