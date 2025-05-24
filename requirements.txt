@@ -1,5 +1,4 @@
 discord-py
 python-dotenv
 pymongo
-requests
 gradio_client

@@ -1,16 +1,31 @@
-import discord, random, requests, os, time, datetime, re
+import discord, random, os, time, datetime, re, traceback, aiohttp
 from discord.ext import commands
 from discord import app_commands
 from gradio_client import Client
+from openai import AsyncOpenAI
+
+def split_response(response, max_length=1900):
+    lines = response.splitlines()
+    chunks = []
+    current_chunk = ""
+    for line in lines:
+        if len(current_chunk) + len(line) + 1 > max_length:
+            chunks.append(current_chunk.strip())
+            current_chunk = line
+        else:
+            current_chunk += "\n" + line if current_chunk else line
+    if current_chunk:
+        chunks.append(current_chunk.strip())
+    return chunks
 
 class FunCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.logger = self.bot.cog_logger(self.__class__.__name__)
         self.hf_token = os.environ['HF_TOKEN']
-        self.merged, self.dev, self.schnell = None, None, None
+        self.client = AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=os.environ['OR_TOKEN'])
+        self.merged = self.dev = self.schnell = None
         bot.loop.run_in_executor(None, self.load_models)
-        bot.loop.run_in_executor(None, self.load_banned_words)
 
     def load_models(self):
         models = {
@@ -23,30 +38,18 @@ class FunCog(commands.Cog):
 
     def load_one(self, model_name, var_name):
         try:
-            model = Client(model_name, self.hf_token)
+            model = Client(model_name, self.hf_token, verbose=False)
             setattr(self, var_name, model)
         except Exception as e:
             self.logger.error(f'Model {model_name} failed to load: {e}')
             setattr(self, var_name, None)
 
-    def load_banned_words(self, link = ''):
-        if link == '':
-            banned_words_link = os.environ['BW_LINK']
-        else:
-            banned_words_link = link
-        try:
-            response = requests.get(banned_words_link, timeout=5)
-            response.raise_for_status()
-            self.banned_words = response.text.splitlines()
-            self.logger.info(f'Loaded {len(self.banned_words)} banned words')
-        except Exception as e:
-            self.logger.error(f'Failed to load banned words: {e}')
-            if not self.banned_words:
-                self.banned_words = None
-
     @commands.hybrid_command(name="cat", help="Sends a random cat image")
     async def cat(self, ctx):
-        await ctx.send(requests.get("https://api.thecatapi.com/v1/images/search").json()[0]["url"])
+        async with aiohttp.ClientSession() as session:
+            response = await session.get("https://api.thecatapi.com/v1/images/search")
+            data = await response.json()
+        await ctx.send(data[0]["url"])
 
     @commands.hybrid_command(name="flip", help="Flips a coin")
     async def flip(self, ctx):
@@ -66,11 +69,46 @@ class FunCog(commands.Cog):
 
     @commands.hybrid_command(name="joke", help="Sends a random joke")
     async def joke(self, ctx):
-        joke = requests.get("https://v2.jokeapi.dev/joke/Any?blacklistFlags=nsfw,religious,political,racist,sexist,explicit").json()
+        async with aiohttp.ClientSession() as session:
+            response = await session.get("https://v2.jokeapi.dev/joke/Any?blacklistFlags=nsfw,religious,political,racist,sexist,explicit")
+            joke = await response.json()
         if joke["type"] == "single":
             await ctx.send(joke["joke"])
         else:
             await ctx.send(f"{joke['setup']}\n{joke['delivery']}")
+
+    @commands.hybrid_command(name="chat", help="Chat with ai")
+    @commands.cooldown(1, 30, commands.BucketType.user)
+    @app_commands.describe(prompt="A prompt for the ai")
+    async def ai_chat(self, ctx, *, prompt: str):
+        await ctx.defer()
+        try:
+            async with ctx.typing():
+                # TODO: improve this
+                completion = await self.client.chat.completions.create(
+                    extra_headers={"HTTP-Referer": "http://noobnet.v0x.eu", "X-Title": "NoobNetwork (discord, Noob bot)"},
+                    extra_body={},
+                    model="deepseek/deepseek-chat-v3-0324:free",
+                    messages=[
+                        {
+                        "role": "user",
+                        "content": [
+                            {
+                            "type": "text",
+                            "text": "You are a helpful Discord bot. Keep your answers short and to the point."
+                            },
+                            {
+                            "type": "text",
+                            "text": f"{prompt}"
+                            },
+                            ]}])
+                msg = completion.choices[0].message.content
+                chunks = split_response(msg)
+                for chunk in chunks:
+                    await ctx.reply(chunk)
+        except Exception as e:
+            self.logger.error(f'Error in chat command: {ctx.command.name}')
+            print(traceback.format_exc())
 
     @commands.hybrid_command(name="image", help="Generates an image")
     @commands.cooldown(1, 30, commands.BucketType.user)
@@ -83,20 +121,8 @@ class FunCog(commands.Cog):
         ])
     async def image(self, ctx, *, prompt: str, seed: int = 0, width: int = 1024, height: int = 1024, guidance_scale: float = 3.5, steps: int = 4, model: str = "schnell"):
         await ctx.defer()
-        self.bot.log(f'{ctx.author}, prompt: {prompt}, seed: {seed}, width: {width}, height: {height}, guidance_scale: {guidance_scale},steps: {steps}, model: {model}', "log.txt")
-        if self.banned_words:
-            words = re.findall(r'\b\w+\b', prompt.lower())
-            if any(word in words for word in self.banned_words):
-                if ctx.author.guild_permissions.administrator:
-                    await ctx.send("Banned word used, but you are admin.", delete_after=10)
-                    return
-                duration = datetime.timedelta(seconds=120)
-                await ctx.author.timeout(duration,reason="Banned word used")
-                await ctx.send("Banned word used, you have been timed out.")
-                return
-        else:
-            await ctx.send("Banned words not loaded, cant generate image.")
-            return
+        await self.bot.log(f'{ctx.author}, prompt: {prompt}, seed: {seed}, width: {width}, height: {height}, guidance_scale: {guidance_scale},steps: {steps}, model: {model}', "log.txt")
+        # i will manually ban users who type something offensive
         rand = True
         if seed != 0:
             rand = False
@@ -122,14 +148,6 @@ class FunCog(commands.Cog):
                 await ctx.send(f"Error while cleaning up: {e}")
         else:
             await ctx.send("Sorry, there was an issue generating the image.")
-
-    @commands.hybrid_command(name="bw_refresh", help="Refreshes the banned words list")
-    @commands.is_owner()
-    async def bw_refresh(self, ctx, link: str = ''):
-        if not ctx.interaction:
-            await ctx.message.delete()
-        self.load_banned_words(link)
-        await ctx.send("Banned words refreshed.", delete_after=10)
 
 async def setup(bot):
     await bot.add_cog(FunCog(bot))

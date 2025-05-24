@@ -1,10 +1,11 @@
-import requests, discord, platform
+import discord, platform, aiohttp
 from discord.ext import commands
 from discord import app_commands
 
 class MiscCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.logger = bot.cog_logger(self.__class__.__name__)
 
     @commands.hybrid_command(name="add", help="Adds one to the database")
     @commands.cooldown(1, 5, commands.BucketType.user)
@@ -42,10 +43,17 @@ class MiscCog(commands.Cog):
             "X-RapidAPI-Key": "a3a7d073famsh43a70b10b861ed7p115a35jsnb340981d017b",
             "X-RapidAPI-Host": "weatherapi-com.p.rapidapi.com"
         }
-        weather = requests.get("https://weatherapi-com.p.rapidapi.com/forecast.json", headers=headers, params={"q":city,"days":"3"}).json()
+        async with aiohttp.ClientSession() as session:
+            async with session.get("https://weatherapi-com.p.rapidapi.com/forecast.json", headers=headers, params={"q":city,"days":"3"}) as response:
+                if response.status != 200:
+                    await ctx.send("Failed to fetch weather data.")
+                    self.logger.error(f"Weather API request failed with status {response.status}")
+                    return
+                weather = await response.json()
         bad_json = {'message': 'This endpoint is disabled for your subscription'}
         if weather == bad_json:
-            await ctx.send("This api key is cooked, owner needs to get a new one", ephemeral = True)
+            await ctx.send("This api key is cooked, owner needs to get a new one")
+            self.logger.error("Weather API key is cooked")
             return
         embed = discord.Embed(title=f"Weather in {weather['location']['name']}, {weather['location']['country']}", color=discord.Color.blue())
         embed.add_field(name="Local Time", value=weather['location']['localtime'], inline=False)
