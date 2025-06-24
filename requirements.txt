@@ -3,3 +3,4 @@ python-dotenv
 pymongo
 gradio_client
 openai
+aiofiles
