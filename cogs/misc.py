@@ -24,6 +24,23 @@ class MiscCog(commands.Cog):
         except Exception as e:
             await self.bot.respond(ctx, f"Could not send DM, {e}")
 
+    @commands.hybrid_command(name="cb", help="Check boost count of a user")
+    @commands.cooldown(1, 3, commands.BucketType.user)
+    @app_commands.describe(user="User to check boost count for")
+    async def count_boosts(self, ctx, user: discord.Member | None):
+        if user is None:
+            user = ctx.author
+        if not isinstance(user, discord.Member):
+            await ctx.send("Invalid user provided.")
+            return
+        if user.premium_since:
+            boosts = await self.bot.check_boost(ctx.guild.id, user.id)
+            if not boosts:
+                return await ctx.send("Failed to get boost count.")
+            await ctx.send(f"{user.name} has {boosts} boosts.")
+        else:
+            await ctx.send(f"{user.name} has not boosted the server.")
+
     @commands.hybrid_command(name="info", help="Displays information about the bot")
     @commands.cooldown(1, 30, commands.BucketType.user)
     async def a_bot_info(self, ctx):

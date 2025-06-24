@@ -1,4 +1,4 @@
-import discord, os, aiohttp, dotenv, atexit, logging, tempfile
+import discord, os, aiohttp, dotenv, atexit, logging, aiofiles
 from aiohttp import web
 from typing import Optional
 from discord import app_commands
@@ -7,6 +7,7 @@ from pymongo.server_api import ServerApi
 from pymongo.mongo_client import MongoClient
 if os.name == 'nt':
     try:
+        # this fixes logger colors on windows
         from colorama import just_fix_windows_console
         just_fix_windows_console()
         os.environ['WT_SESSION'] = 'bruh'
@@ -17,23 +18,23 @@ bot_name = 'noob_bot'
 logger.name = bot_name
 dotenv.load_dotenv()
 script_path = os.path.dirname(__file__)
-TOKEN = os.environ["TOKEN"]
-RTOKEN = os.environ["RTOKEN"]
+TOKEN = os.environ['TOKEN']
+RTOKEN = os.environ['RTOKEN']
 PTOKEN = os.environ['PTOKEN']
-folder = "DiscordBotData"
+folder = 'DiscordBotData'
 api = 'https://eapi.pcloud.com'
-uri = os.environ["MONGODB_URI"]
+uri = os.environ['MONGODB_URI']
 client = MongoClient(uri, server_api=ServerApi('1'))
-db = client["discord_bot"]
+db = client['discord_bot']
 unloaded_coll = db['unloaded_cogs']
-unloaded_cogs = {cog["cog"] for cog in unloaded_coll.find()}
+unloaded_cogs = {cog['cog'] for cog in unloaded_coll.find()}
 counter = db['counter']
-disabled_coll = db["disabled_channels"]
-disabled_channels = {channel["_id"] for channel in disabled_coll.find()}
-disabled_com_coll = db["disabled_commands"]
-disabled_commands = {command["command"] for command in disabled_com_coll.find()}
+disabled_coll = db['disabled_channels']
+disabled_channels = {channel['_id'] for channel in disabled_coll.find()}
+disabled_com_coll = db['disabled_commands']
+disabled_commands = {command['command'] for command in disabled_com_coll.find()}
 # default aiohttp timeout
-def_TO = aiohttp.ClientTimeout(total=5, connect=2, sock_connect=2, sock_read=3)
+def_TO = aiohttp.ClientTimeout(7)
 
 class Bot(commands.Bot):
     def __init__(self):
@@ -49,50 +50,45 @@ class Bot(commands.Bot):
         l.name = f'bot.{cog_name}' if not bot_name in cog_name else cog_name
         return l
 
-    async def log(self, text, file):
+    async def log(self, text: str, file: str):
         try:
-            temp_file = tempfile.NamedTemporaryFile(delete=False).name
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{api}/listfolder", params={'path': f'/{folder}', 'auth': PTOKEN}, timeout=def_TO) as response:
-                    response_json = await response.json()
-                    if response_json["result"] != 0:
-                        return logger.error(f"Failed to list folder {folder}: {response_json['result']}, error: {response_json.get('error', 'Unknown error')}")
+            async with aiohttp.ClientSession(api, timeout=def_TO) as session:
+                async with session.get("/listfolder", params={'path': f'/{folder}', 'auth': PTOKEN}) as response:
                     files = await response.json()
+                    if files["result"] != 0:
+                        return logger.error(f"Failed to list folder {folder}: {files['result']}, error: {files.get('error', 'Unknown error')}")
                 file_info = next((f for f in files.get('metadata', {}).get('contents', []) if f['name'] == file), None)
                 if file_info:
-                    async with session.get(f"{api}/getfilelink", params={'fileid': file_info['fileid'], 'auth': PTOKEN}, timeout=def_TO) as file_url_response:
+                    async with session.get("/getfilelink", params={'fileid': file_info['fileid'], 'auth': PTOKEN}) as file_url_response:
                         file_url = await file_url_response.json()
                     download_url = file_url['hosts'][0] + file_url['path']
-                    async with session.get(f'https://{download_url}', timeout=def_TO) as file_response:
-                        content = await file_response.read()
-                    with open(temp_file, 'wb') as f:
-                        f.write(content)
-                with open(temp_file, 'a') as f:
-                    f.write(f"{text}\n")
-                with open(temp_file, 'rb') as f:
-                    form = aiohttp.FormData()
-                    form.add_field('filename', f, filename=file)
-                    await session.post(f"{api}/uploadfile", data=form, params={'path': f'/{folder}', 'auth': PTOKEN}, timeout=def_TO)
-            os.remove(temp_file)
+                    async with session.get(f'https://{download_url}') as file_response:
+                        rtext = await file_response.text()
+                else: rtext = ''
+                async with aiofiles.tempfile.NamedTemporaryFile(mode='w+') as temp_file:
+                    await temp_file.write(rtext + text + '\n')
+                    await temp_file.seek(0)
+                    content = await temp_file.read()
+                data = aiohttp.FormData()
+                data.add_field('filename', content, filename=file)
+                await session.post("/uploadfile", data=data, params={'path': f'/{folder}', 'auth': PTOKEN})
         except Exception as e:
-            logger.error(f'Error logging to {file}: {e}')
+            logger.exception(f'Error logging to {file}')
     
-    async def get_lines(self, num_lines, file):
+    async def get_lines(self, num_lines: int, file: str):
         try:
-            temp_file = tempfile.NamedTemporaryFile(delete=False).name
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{api}/listfolder", params={'path': f'/{folder}', 'auth': PTOKEN}, timeout=def_TO) as response:
+            async with aiohttp.ClientSession(api, timeout=def_TO) as session:
+                async with session.get("/listfolder", params={'path': f'/{folder}', 'auth': PTOKEN}) as response:
                     files = await response.json()
                     if files["result"] != 0:
                         return logger.error(f"Failed to list folder {folder}: {files['result']}, error: {files.get('error', 'Unknown error')}")
                 file_info = next((f for f in files.get('metadata', {}).get('contents', []) if f['name'] == file), None)
                 if not file_info:
-                    logger.error(f"File '{file}' not found in folder '{folder}'.")
-                    return []
-                async with session.get(f"{api}/getfilelink", params={'fileid': file_info['fileid'], 'auth': PTOKEN}, timeout=def_TO) as file_url_response:
+                    return logger.error(f"File '{file}' not found in folder '{folder}'.")
+                async with session.get("/getfilelink", params={'fileid': file_info['fileid'], 'auth': PTOKEN}) as file_url_response:
                     file_url = await file_url_response.json()
                 download_url = file_url['hosts'][0] + file_url['path']
-                async with session.get(f'https://{download_url}', timeout=def_TO) as file_response:
+                async with session.get(f'https://{download_url}') as file_response:
                     text = await file_response.text()
                     lines = text.splitlines()
                     if not lines:
@@ -102,21 +98,22 @@ class Bot(commands.Bot):
                     if num_lines > len(lines):
                         num_lines = len(lines)
                     lines2 = lines[:num_lines]
-                    with open(temp_file, 'w') as f: f.write("\n".join(lines[num_lines:]))
-                    with open(temp_file, 'rb') as f:
-                        data = aiohttp.FormData()
-                        data.add_field('filename', f, filename=file)
-                        await session.post(f"{api}/uploadfile", data=data, params={'path': f'/{folder}', 'auth': PTOKEN}, timeout=def_TO)
-            os.remove(temp_file)
+                async with aiofiles.tempfile.NamedTemporaryFile(mode='w+') as temp_file:
+                    await temp_file.write("\n".join(lines[num_lines:]))
+                    await temp_file.seek(0)
+                    content = await temp_file.read()
+                data = aiohttp.FormData()
+                data.add_field('filename', content, filename=file)
+                await session.post("/uploadfile", data=data, params={'path': f'/{folder}', 'auth': PTOKEN})
             return lines2
         except Exception as e:
-            logger.error(f'Error getting lines from {file}: {e}')
-            return []
+            logger.exception(f'Error getting lines from {file}')
+            return None
     
-    async def check_boost(self, guild_id, member_id):
+    async def check_boost(self, guild_id: int, member_id: int):
         try:
-            async with aiohttp.ClientSession() as session:
-                response = await session.get(f'https://discord.com/api/v10/guilds/{guild_id}/premium/subscriptions', headers={'authorization': RTOKEN}, timeout=def_TO)
+            async with aiohttp.ClientSession(headers={'authorization': RTOKEN}, timeout=def_TO) as session:
+                response = await session.get(f'https://discord.com/api/v10/guilds/{guild_id}/premium/subscriptions')
                 if response.status != 200:
                     logger.error(f'Error getting boost count for guild {guild_id}: {response.status}')
                     return False
@@ -189,6 +186,8 @@ async def on_command_error(ctx, error):
             await ctx.send("You can't use commands in DMs.", ephemeral = True)
     elif isinstance(error, discord.HTTPException) and error.status == 429:
         logger.warning(f"Rate limited. Retry in {error.response.headers['Retry-After']} seconds.")
+    elif isinstance(error, discord.HTTPException) and error.status == 400:
+        logger.error(f"Bad request: {error.text}")
     elif isinstance(error, commands.CommandOnCooldown):
         await ctx.send(f"This command is on cooldown. Please wait {error.retry_after:.2f}s", ephemeral = True, delete_after = 5)
     else: await ctx.send(error, ephemeral = True)

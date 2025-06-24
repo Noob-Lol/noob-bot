@@ -85,30 +85,32 @@ class FunCog(commands.Cog):
         try:
             async with ctx.typing():
                 # TODO: improve this
-                completion = await self.client.chat.completions.create(
-                    extra_headers={"HTTP-Referer": "http://noobnet.v0x.eu", "X-Title": "NoobNetwork (discord, Noob bot)"},
-                    extra_body={},
-                    model="deepseek/deepseek-chat-v3-0324:free",
-                    messages=[
-                        {
-                        "role": "user",
-                        "content": [
-                            {
-                            "type": "text",
-                            "text": "You are a helpful Discord bot. Keep your answers short and to the point."
-                            },
-                            {
-                            "type": "text",
-                            "text": f"{prompt}"
-                            },
-                            ]}])
+                try:
+                    completion = await self.client.chat.completions.create(
+                        extra_headers={"HTTP-Referer": "http://noobnet.v0x.eu", "X-Title": "NoobNetwork (discord, Noob bot)"},
+                        extra_body={},
+                        model="deepseek/deepseek-chat-v3-0324:free",
+                        messages=[{
+                            "role": "user",
+                            "content": [
+                                {
+                                "type": "text",
+                                "text": "You are a helpful Discord bot. Keep your answers short and to the point. Free nitro is real only if its from official Discord promotion."
+                                },
+                                {
+                                "type": "text",
+                                "text": f"{prompt}"
+                                },
+                                ]}])
+                except Exception as e:
+                    self.logger.exception('Error in ai_chat command while creating completion')
+                    return await ctx.reply("Something went wrong, please try again later")
                 msg = completion.choices[0].message.content
                 chunks = split_response(msg)
                 for chunk in chunks:
                     await ctx.reply(chunk)
         except Exception as e:
-            self.logger.error(f'Error in chat command: {ctx.command.name}')
-            print(traceback.format_exc())
+            self.logger.exception('Error in ai_chat command')
 
     @commands.hybrid_command(name="image", help="Generates an image")
     @commands.cooldown(1, 30, commands.BucketType.user)

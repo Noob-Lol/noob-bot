@@ -11,14 +11,22 @@ class NitroCog(commands.Cog):
         self.bot = bot
         self.busy = False
         self.logger = bot.cog_logger(self.__class__.__name__)
+        self.nitro_usage = bot.db['nitro_usage']
         self.eco = bot.db['economy']
         self.embed_settings = bot.db['embed_settings']
         self.embed_var = list(self.embed_settings.find())
         self.count = bot.counter.find_one({'_id': 'nitro_counter'})['count']
+        self.limit = bot.counter.find_one({'_id': 'nitro_limit'})['count']
+        self.b1mult = bot.counter.find_one({'_id': 'b1mult'})['count']
+        self.b2mult = bot.counter.find_one({'_id': 'b2mult'})['count']
+        self.new_nitro_system = bot.counter.find_one({'_id': 'new_nitro_system'})['state'] if bot.counter.find_one({'_id': 'new_nitro_system'}) else True
         self.nitro_toggle = bot.counter.find_one({'_id': 'nitro_toggle'})['state'] if bot.counter.find_one({'_id': 'nitro_toggle'}) else True
         if not self.nitro_toggle:
             self.logger.warning("Nitro commands are disabled.")
+        elif not self.new_nitro_system:
+            self.logger.warning("Using old nitro system.")
         self.update_embed.start()
+        self.cleanup_old_limits.start()
 
     @commands.hybrid_command(name="nitro", help="Sends a free nitro link")
     @commands.cooldown(1, 5, commands.BucketType.user)
@@ -45,8 +53,8 @@ class NitroCog(commands.Cog):
             return await self.bot.respond(ctx, "Amount can't be negative.")
         try:
             lines = await self.bot.get_lines(0, 'nitro.txt')
-            if not lines and not lines == 0:
-                return await ctx.send("There was an error getting the codes.")
+            if lines is None:
+                return await ctx.send("There was an error checking the code stock.")
             if lines > 0:
                 if amount == 0:
                     return await ctx.send(f"There are {lines} codes available.")
@@ -57,13 +65,45 @@ class NitroCog(commands.Cog):
                     pass
                 else:
                     user_id = ctx.author.id
-                    user = self.eco.find_one({'_id': user_id})
-                    if not user:
-                        return await ctx.send("You are not in database. (no nitro credits)")
-                    if user['balance'] < amount:
-                        return await ctx.send(f"You don't have enough nitro credits. {user['balance']}/{amount}.")
-                    self.eco.update_one({'_id': user_id}, {'$inc': {'balance': -amount}})
+                    if self.new_nitro_system:
+                        user = self.eco.find_one({'_id': user_id})
+                        if not user:
+                            return await ctx.send("You are not in database. (no nitro credits)")
+                        if user['balance'] < amount:
+                            return await ctx.send(f"You don't have enough nitro credits. {user['balance']}/{amount}.")
+                        self.eco.update_one({'_id': user_id}, {'$inc': {'balance': -amount}})
+                    else:
+                        # old nitro system
+                        today_dt = datetime.datetime.combine(datetime.date.today(), datetime.time(0, 0, 0))
+                        result = self.nitro_usage.find_one({'user_id': user_id, 'date': today_dt})
+                        limit = self.limit
+                        if result:
+                            rcount = result['count']
+                            if ctx.author.premium_since:
+                                boost_count = self.bot.check_boost(ctx.guild.id, user_id)
+                                if not boost_count:
+                                    return await ctx.send("There was an error getting your boost count.")
+                                if boost_count == 1:
+                                    limit *= self.b1mult
+                                elif boost_count >= 2:
+                                    limit *= self.b2mult
+                            if rcount >= limit:
+                                if ctx.author.premium_since:
+                                    if boost_count == 1:
+                                        await ctx.send("You have reached the daily limit. Try again tomorrow or boost again.", delete_after=15)
+                                    elif boost_count >= 2:
+                                        await ctx.send("You have reached the daily limit. Try again tomorrow.", delete_after=15)
+                                else:
+                                    await ctx.send("You have reached the free limit. Try again tomorrow or boost the server.", delete_after=15)
+                                return
+                            elif rcount + amount > limit:
+                                amount = limit - rcount
+                        if amount > limit:
+                            amount = limit
+                        self.nitro_usage.update_one({'user_id': user_id, 'date': today_dt}, {'$inc': {'count': amount}}, upsert=True)
                 lines = await self.bot.get_lines(amount, 'nitro.txt')
+                if lines is None:
+                    return await ctx.send("There was an error getting the codes.")
                 if amount > 1:
                     codes = []  
                     count = 0
@@ -115,7 +155,7 @@ class NitroCog(commands.Cog):
                 if not ctx.interaction: await ctx.message.delete()
                 await self.bot.respond(ctx, "No nitro codes left.", 10)
         except Exception as e:
-            self.logger.error(f"Error in nitro command: {e}")
+            self.logger.exception(f"Error in nitro command")
             await ctx.send("An error occurred while processing your request.")
 
     @nitro.error
@@ -131,6 +171,67 @@ class NitroCog(commands.Cog):
         else:
             ctx.unhandled_error = True
 
+    @commands.hybrid_command(name="limit", help="Set nitro limit and multipliers.")
+    @commands.is_owner()
+    async def set_limit(self, ctx, amount: int, limit: str = "nitro_limit"):
+        if not ctx.interaction: await ctx.message.delete()
+        if amount < 1:
+            return await self.bot.respond(ctx, "Amount must be at least 1.", 10)
+        if limit != "nitro_limit" and limit != "b1mult" and limit != "b2mult":
+            return await self.bot.respond(ctx, "Invalid limit choice.", 10)
+        if limit == "b1mult":
+            self.b1mult = amount
+        elif limit == "b2mult":
+            self.b2mult = amount
+        else:
+            self.limit = amount
+        self.bot.counter.find_one_and_update({'_id': limit}, {'$set': {'count': amount}}, upsert=True)
+        await ctx.send(f"Updated {limit} to {amount}.")
+    
+    @commands.hybrid_command(name="what", help="View nitro limit.")
+    async def get_limit(self, ctx):
+        if not self.nitro_toggle:
+            if not ctx.interaction: await ctx.message.delete()
+            return await self.bot.respond(ctx, "Nitro commands are disabled.")
+        if self.new_nitro_system:
+            return await ctx.send("1 promo = 1 nitro credit")
+        await ctx.send(f"Current nitro limit (daily): {self.limit}, multipliers: 1 boost = {self.b1mult}, 2 boosts = {self.b2mult}")
+
+    @commands.hybrid_command(name="usage", help="View nitro usage.")
+    @commands.cooldown(1, 10, commands.BucketType.user)
+    async def usage(self, ctx):
+        if not self.nitro_toggle:
+            if not ctx.interaction: await ctx.message.delete()
+            return await self.bot.respond(ctx, "Nitro commands are disabled.")
+        if self.new_nitro_system:
+            return await ctx.send("This command is not available in the new nitro system.")
+        member = ctx.author
+        today_dt = datetime.datetime.combine(datetime.date.today(), datetime.time(0, 0, 0))
+        user_id = member.id
+        result = self.nitro_usage.find_one({'user_id': user_id, 'date': today_dt})
+        if not result:
+            result = {}
+            result['count'] = 0
+        if result:
+            count = result['count']
+            if member.premium_since:
+                boost_count = self.bot.check_boost(ctx.guild.id, member.id)
+                if not boost_count:
+                    return await ctx.send("There was an error getting your boost count.")
+                if boost_count == 1:
+                    await ctx.send(f"1 boost. Your usage is {count}/{self.limit*self.b1mult}.")
+                elif boost_count == 2:
+                    await ctx.send(f"2 boosts. Your usage is {count}/{self.limit*self.b2mult}.")
+                else:
+                    await ctx.send(f"{boost_count} boosts. There are no more perks after 2 boosts. Your usage is {count}/{self.limit*self.b2mult}.")
+            else:
+                await ctx.send(f"No boosts. Your usage is {count}/{self.limit}.")
+
+    @tasks.loop(hours=24)
+    async def cleanup_old_limits(self):
+        today_dt = datetime.datetime.combine(datetime.date.today() - datetime.timedelta(days=1), datetime.time(0, 0, 0))
+        self.nitro_usage.delete_many({'date': {'$lt': today_dt}})
+
     @tasks.loop(minutes=5)
     async def update_embed(self):
         try:
@@ -142,6 +243,8 @@ class NitroCog(commands.Cog):
                 if channel:
                     if self.nitro_toggle:
                         nitro_count = await self.bot.get_lines(0, 'nitro.txt')
+                        if nitro_count is None:
+                            nitro_count = "Error"
                     else:
                         nitro_count = "N/A"
                     embed = discord.Embed(title="Bot Status", description="Online 24/7, hosted somewhere...", color=discord.Color.random(), timestamp = datetime.datetime.now())
@@ -159,7 +262,7 @@ class NitroCog(commands.Cog):
             self.embed_settings.delete_one({'guild_id': guild_id})
             self.embed_var.remove(setting)
         except Exception as e:
-            self.logger.error(f"Error updating embed: {e}")
+            self.logger.exception("Failed to update embed")
 
     @commands.command(name="embe", help="Enable embed updates in the current channel.")
     @commands.is_owner()
@@ -198,11 +301,17 @@ class NitroCog(commands.Cog):
 
     @commands.hybrid_command(name='nitrotoggle', help='Toggle nitro related commands.')
     @commands.is_owner()
-    async def toggle_nitro(self, ctx):
+    async def toggle_nitro(self, ctx, choice = None):
         if not ctx.interaction: await ctx.message.delete()
-        self.nitro_toggle = not self.nitro_toggle
-        self.bot.counter.find_one_and_update({'_id': 'nitro_toggle'}, {'$set': {'state': self.nitro_toggle}}, upsert=True)
-        await self.bot.respond(ctx, f"Nitro commands {'enabled' if self.nitro_toggle else 'disabled'}")
+        if choice is None:
+            self.nitro_toggle = not self.nitro_toggle
+            self.bot.counter.find_one_and_update({'_id': 'nitro_toggle'}, {'$set': {'state': self.nitro_toggle}}, upsert=True)
+            await self.bot.respond(ctx, f"Nitro commands {'enabled' if self.nitro_toggle else 'disabled'}")
+        else:
+            # toggle the new nitro system
+            self.new_nitro_system = not self.new_nitro_system
+            self.bot.counter.find_one_and_update({'_id': 'new_nitro_system'}, {'$set': {'state': self.new_nitro_system}}, upsert=True)
+            await self.bot.respond(ctx, f"New nitro system {'enabled' if self.new_nitro_system else 'disabled'}")
 
 async def setup(bot):
     await bot.add_cog(NitroCog(bot))
