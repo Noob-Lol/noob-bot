@@ -1,10 +1,9 @@
-import discord, os, aiohttp, dotenv, atexit, logging, aiofiles
+import discord, os, aiohttp, dotenv, atexit, logging, aiofiles, time
 from aiohttp import web
 from typing import Optional
 from discord import app_commands
 from discord.ext import commands
-from pymongo.server_api import ServerApi
-from pymongo.mongo_client import MongoClient
+from pymongo import AsyncMongoClient
 if os.name == 'nt':
     try:
         # this fixes logger colors on windows
@@ -13,6 +12,7 @@ if os.name == 'nt':
         os.environ['WT_SESSION'] = 'bruh'
     except ImportError:
         pass
+start_time = time.time()
 logger = logging.getLogger('discord.n01b')
 bot_name = 'noob_bot'
 logger.name = bot_name
@@ -24,15 +24,12 @@ PTOKEN = os.environ['PTOKEN']
 folder = 'DiscordBotData'
 api = 'https://eapi.pcloud.com'
 uri = os.environ['MONGODB_URI']
-client = MongoClient(uri, server_api=ServerApi('1'))
+client = AsyncMongoClient(uri)
 db = client['discord_bot']
-unloaded_coll = db['unloaded_cogs']
-unloaded_cogs = {cog['cog'] for cog in unloaded_coll.find()}
 counter = db['counter']
+unloaded_coll = db['unloaded_cogs']
 disabled_coll = db['disabled_channels']
-disabled_channels = {channel['_id'] for channel in disabled_coll.find()}
 disabled_com_coll = db['disabled_commands']
-disabled_commands = {command['command'] for command in disabled_com_coll.find()}
 # default aiohttp timeout
 def_TO = aiohttp.ClientTimeout(7)
 
@@ -44,6 +41,26 @@ class Bot(commands.Bot):
         self.db = db
         self.counter = counter
         self.react = False
+
+    async def setup_hook(self):
+        await client.aconnect()
+        global unloaded_cogs, disabled_channels, disabled_commands
+        unloaded_cogs = {cog['cog'] async for cog in unloaded_coll.find()}
+        disabled_channels = {channel['_id'] async for channel in disabled_coll.find()}
+        disabled_commands = {command['command'] async for command in disabled_com_coll.find()}
+        cogs = [filename[:-3] for filename in os.listdir(f'{script_path}/cogs') if filename.endswith('.py')]
+        for cog_name in cogs:
+            if cog_name in unloaded_cogs:
+                continue
+            try:
+                await bot.load_extension(f'cogs.{cog_name}')
+            except commands.ExtensionAlreadyLoaded:
+                pass
+        disabled_commands_list = [bot.get_command(command) for command in disabled_commands if (_ := bot.get_command(command)) is not None]
+        for command in disabled_commands_list:
+            if command:
+                logger.info(f'Disabling command: {command.name}')
+                command.enabled = False
 
     def cog_logger(self, cog_name: str):
         l = logging.getLogger(f'discord.n01b.{cog_name}')
@@ -261,11 +278,11 @@ async def toggle_thing(ctx, type: str = p(descripts['type']), name: Optional[str
                     break
             if cog_name in bot.cogs:
                 await bot.unload_extension(f'cogs.{cog}')
-                unloaded_coll.insert_one({"cog": cog})
+                await unloaded_coll.insert_one({"cog": cog})
                 await bot.respond(ctx, f"Disabled {cog}")
             elif cog in unloaded_cogs:
                 await bot.load_extension(f'cogs.{cog}')
-                unloaded_coll.delete_one({"cog": cog})
+                await unloaded_coll.delete_one({"cog": cog})
                 await bot.respond(ctx, f"Enabled {cog}")
             else:
                 await bot.respond(ctx, f"Cog not found: {cog}")
@@ -273,12 +290,12 @@ async def toggle_thing(ctx, type: str = p(descripts['type']), name: Optional[str
             await bot.respond(ctx, f"Error: {e}", 10)
     elif type == 'channel':
         if ctx.channel.id in disabled_channels:
-            result = disabled_coll.delete_one({"_id": ctx.channel.id})
+            result = await disabled_coll.delete_one({"_id": ctx.channel.id})
             if result.deleted_count > 0:
                 disabled_channels.remove(ctx.channel.id)
                 await ctx.send("This channel has been enabled for bot commands.")
         else:
-            disabled_coll.insert_one({"_id": ctx.channel.id})
+            await disabled_coll.insert_one({"_id": ctx.channel.id})
             disabled_channels.add(ctx.channel.id)
             await ctx.send("This channel has been disabled for bot commands.")
     elif type == 'react':
@@ -298,9 +315,9 @@ async def toggle_thing(ctx, type: str = p(descripts['type']), name: Optional[str
             return
         result = found.enabled = not found.enabled
         if result:
-            disabled_com_coll.delete_one({"command": command})
+            await disabled_com_coll.delete_one({"command": command})
         else:
-            disabled_com_coll.insert_one({"command": command})
+            await disabled_com_coll.insert_one({"command": command})
         await bot.respond(ctx, f"Command {command} is now {'enabled' if result else 'disabled'}")
 
 @bot.command(name="sync", help="Syncs commands")
@@ -315,25 +332,12 @@ async def web_status(_):
 
 @bot.event
 async def on_ready():
-    await bot.change_presence(activity=discord.CustomActivity(name='im cool 😎, ">" prefix'))
-    cogs = [filename[:-3] for filename in os.listdir(f'{script_path}/cogs') if filename.endswith('.py')]
-    for cog_name in cogs:
-        if cog_name in unloaded_cogs:
-            continue
-        try:
-            await bot.load_extension(f'cogs.{cog_name}')
-        except commands.ExtensionAlreadyLoaded:
-            pass
     app = web.Application()
     app.router.add_get('/', web_status)
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, '0.0.0.0', 8000).start()
-    logger.info(f'Logged in as {bot.user}')
-    disabled_commands_list = [bot.get_command(command) for command in disabled_commands if (_ := bot.get_command(command)) is not None]
-    for command in disabled_commands_list:
-        if command:
-            logger.info(f'Disabling command: {command.name}')
-            command.enabled = False
+    await bot.change_presence(activity=discord.CustomActivity(name='im cool 😎, ">" prefix'))
+    logger.info(f'Logged in as {bot.user}, time: {time.time()-start_time:.2f}s, latency: {round(bot.latency * 1000)}ms')
 
 bot.run(TOKEN)

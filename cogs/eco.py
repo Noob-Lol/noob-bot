@@ -14,24 +14,24 @@ class EconomyCog(commands.Cog):
     async def farm(self, ctx):
         today_dt = datetime.datetime.combine(datetime.date.today(), datetime.time(0, 0, 0))
         user_id = ctx.author.id
-        result = self.farm_usage.find_one({'_id': user_id})
+        result = await self.farm_usage.find_one({'_id': user_id})
         if result:
             last_farm = result['last_farm']
             if last_farm >= today_dt:
                 return await ctx.send("You have already farmed today.")
-            self.farm_usage.update_one({'_id': user_id}, {'$set': {'last_farm': today_dt}})
+            await self.farm_usage.update_one({'_id': user_id}, {'$set': {'last_farm': today_dt}})
         else:
-            self.farm_usage.insert_one({'_id': user_id, 'last_farm': today_dt})
+            await self.farm_usage.insert_one({'_id': user_id, 'last_farm': today_dt})
         amount = 0.5
-        user = self.collection.find_one({"_id": user_id})
+        user = await self.collection.find_one({"_id": user_id})
         if user:
             new_balance = user["balance"] + amount
             if new_balance % 1 == 0:
                 new_balance = int(new_balance)
-            self.collection.update_one({"_id": user_id}, {"$set": {"balance": new_balance}})
+            await self.collection.update_one({"_id": user_id}, {"$set": {"balance": new_balance}})
         else:
             new_balance = amount
-            self.collection.insert_one({"_id": user_id, "balance": new_balance})
+            await self.collection.insert_one({"_id": user_id, "balance": new_balance})
         await ctx.send(f"{ctx.author.mention}, you have been given {amount} nitro credits! Your new balance is {new_balance}.")
 
     @commands.hybrid_command(name="give", help="Gives nitro credits to another user")
@@ -39,33 +39,33 @@ class EconomyCog(commands.Cog):
     async def give(self, ctx, user: discord.User, amount: float):
         if amount < 1:
             return await ctx.send("Amount must be at least 1.")
-        author_data = self.collection.find_one({"_id": ctx.author.id})
+        author_data = await self.collection.find_one({"_id": ctx.author.id})
         if not author_data:
             return await ctx.send("You don't have any nitro credits.")
         if author_data["balance"] < amount:
             return await ctx.send("You don't have enough nitro credits to give.")
         user_id = user.id
-        user_data = self.collection.find_one({"_id": user_id})
+        user_data = await self.collection.find_one({"_id": user_id})
         if user_data:
             new_balance = user_data["balance"] + amount
-            self.collection.update_one({"_id": user_id}, {"$set": {"balance": new_balance}})
+            await self.collection.update_one({"_id": user_id}, {"$set": {"balance": new_balance}})
         else:
             new_balance = amount
-            self.collection.insert_one({"_id": user_id, "balance": new_balance})
-        self.collection.update_one({"_id": ctx.author.id}, {"$inc": {"balance": -amount}})
+            await self.collection.insert_one({"_id": user_id, "balance": new_balance})
+        await self.collection.update_one({"_id": ctx.author.id}, {"$inc": {"balance": -amount}})
         await ctx.send(f"**{ctx.author.name}** gave **{user.name}** {amount} nitro credits. Their new balance is {new_balance}.")
 
     @commands.hybrid_command(name="set_balance", help="Sets the user's nitro credits to a specific amount")
     @commands.has_permissions(administrator=True)
     async def set_balance(self, ctx, user: discord.User, amount: float):
         user_id = user.id
-        self.collection.update_one({"_id": user_id}, {"$set": {"balance": amount}}, upsert=True)
-        await ctx.send(f"{user.mention}'s balance has been set to {amount}.")
+        await self.collection.update_one({"_id": user_id}, {"$set": {"balance": amount}}, upsert=True)
+        await self.bot.respond(ctx, f"{user.name}'s balance has been set to {amount}.")
 
     @commands.hybrid_command(name="balance", help="Displays your current balance")
     async def balance(self, ctx):
         user_id = ctx.author.id
-        user = self.collection.find_one({"_id": user_id})
+        user = await self.collection.find_one({"_id": user_id})
         if user:
             balance = user["balance"]
         else:
@@ -76,7 +76,7 @@ class EconomyCog(commands.Cog):
     @commands.cooldown(1, 30, commands.BucketType.user)
     async def leaderboard(self, ctx):
         await ctx.defer(ephemeral=True)
-        users = self.collection.find({})
+        users = await self.collection.find({}).to_list(length=100)
         this_guild = []
         for user in users:
             user_id = user["_id"]
@@ -126,7 +126,7 @@ class EconomyCog(commands.Cog):
     @tasks.loop(hours=24)
     async def cleanup_old_farm(self):
         today_dt = datetime.datetime.combine(datetime.date.today() - datetime.timedelta(days=1), datetime.time(0, 0, 0))
-        self.farm_usage.delete_many({'last_farm': {'$lt': today_dt}})
+        await self.farm_usage.delete_many({'last_farm': {'$lt': today_dt}})
 
 async def setup(bot):
     await bot.add_cog(EconomyCog(bot))

@@ -1,4 +1,4 @@
-import discord, os, datetime
+import discord, os, datetime, asyncio
 from discord import app_commands
 from discord.ext import commands, tasks
 
@@ -9,24 +9,37 @@ def p(desc, default = None):
 class NitroCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.busy = False
         self.logger = bot.cog_logger(self.__class__.__name__)
         self.nitro_usage = bot.db['nitro_usage']
         self.eco = bot.db['economy']
         self.embed_settings = bot.db['embed_settings']
-        self.embed_var = list(self.embed_settings.find())
-        self.count = bot.counter.find_one({'_id': 'nitro_counter'})['count']
-        self.limit = bot.counter.find_one({'_id': 'nitro_limit'})['count']
-        self.b1mult = bot.counter.find_one({'_id': 'b1mult'})['count']
-        self.b2mult = bot.counter.find_one({'_id': 'b2mult'})['count']
-        self.new_nitro_system = bot.counter.find_one({'_id': 'new_nitro_system'})['state'] if bot.counter.find_one({'_id': 'new_nitro_system'}) else True
-        self.nitro_toggle = bot.counter.find_one({'_id': 'nitro_toggle'})['state'] if bot.counter.find_one({'_id': 'nitro_toggle'}) else True
+        self.cleanup_old_limits.start()
+
+    async def cog_load(self):
+        # load variables in async
+        self.embed_var = [doc async for doc in self.embed_settings.find()]
+        counter_ids = ['nitro_counter', 'nitro_limit', 'b1mult', 'b2mult', 'new_nitro_system', 'nitro_toggle']
+        coros = [self.bot.counter.find_one({'_id': counter_id}) for counter_id in counter_ids] # await
+        results = await asyncio.gather(*coros)
+        # Map results
+        for _id, doc in zip(counter_ids, results):
+            if doc is None:
+                # fallback defaults if no doc found
+                if _id in ['new_nitro_system', 'nitro_toggle']:
+                    setattr(self, _id, True)
+                else:
+                    setattr(self, _id, 0)
+            else:
+                # 'count' for most, 'state' for the last two
+                if _id in ['new_nitro_system', 'nitro_toggle']:
+                    setattr(self, _id, doc.get('state', True))
+                else:
+                    setattr(self, _id, doc.get('count', 0))
         if not self.nitro_toggle:
             self.logger.warning("Nitro commands are disabled.")
         elif not self.new_nitro_system:
             self.logger.warning("Using old nitro system.")
         self.update_embed.start()
-        self.cleanup_old_limits.start()
 
     @commands.hybrid_command(name="nitro", help="Sends a free nitro link")
     @commands.cooldown(1, 5, commands.BucketType.user)
@@ -66,16 +79,16 @@ class NitroCog(commands.Cog):
                 else:
                     user_id = ctx.author.id
                     if self.new_nitro_system:
-                        user = self.eco.find_one({'_id': user_id})
+                        user = await self.eco.find_one({'_id': user_id})
                         if not user:
                             return await ctx.send("You are not in database. (no nitro credits)")
                         if user['balance'] < amount:
                             return await ctx.send(f"You don't have enough nitro credits. {user['balance']}/{amount}.")
-                        self.eco.update_one({'_id': user_id}, {'$inc': {'balance': -amount}})
+                        await self.eco.update_one({'_id': user_id}, {'$inc': {'balance': -amount}})
                     else:
                         # old nitro system
                         today_dt = datetime.datetime.combine(datetime.date.today(), datetime.time(0, 0, 0))
-                        result = self.nitro_usage.find_one({'user_id': user_id, 'date': today_dt})
+                        result = await self.nitro_usage.find_one({'user_id': user_id, 'date': today_dt})
                         limit = self.limit
                         if result:
                             rcount = result['count']
@@ -100,7 +113,7 @@ class NitroCog(commands.Cog):
                                 amount = limit - rcount
                         if amount > limit:
                             amount = limit
-                        self.nitro_usage.update_one({'user_id': user_id, 'date': today_dt}, {'$inc': {'count': amount}}, upsert=True)
+                        await self.nitro_usage.update_one({'user_id': user_id, 'date': today_dt}, {'$inc': {'count': amount}}, upsert=True)
                 lines = await self.bot.get_lines(amount, 'nitro.txt')
                 if lines is None:
                     return await ctx.send("There was an error getting the codes.")
@@ -117,7 +130,7 @@ class NitroCog(commands.Cog):
                                 break
                         else:
                             break
-                    self.bot.counter.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': count}}, upsert=True)
+                    await self.bot.counter.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': count}}, upsert=True)
                     self.count += count
                     codes = '\n'.join(codes)
                     await self.bot.log(f'{ctx.author.name} got {count} nitro codes: {codes}', 'nitro_log.txt')
@@ -135,7 +148,7 @@ class NitroCog(commands.Cog):
                         await ctx.send(codes)
                 else:
                     first_line = lines[0].strip()
-                    self.bot.counter.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': 1}}, upsert=True)
+                    await self.bot.counter.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': 1}}, upsert=True)
                     self.count += 1
                     await self.bot.log(f'{ctx.author.name} got nitro code: {first_line}', 'nitro_log.txt')
                     if 'https://' in first_line:
@@ -185,7 +198,7 @@ class NitroCog(commands.Cog):
             self.b2mult = amount
         else:
             self.limit = amount
-        self.bot.counter.find_one_and_update({'_id': limit}, {'$set': {'count': amount}}, upsert=True)
+        await self.bot.counter.find_one_and_update({'_id': limit}, {'$set': {'count': amount}}, upsert=True)
         await ctx.send(f"Updated {limit} to {amount}.")
     
     @commands.hybrid_command(name="what", help="View nitro limit.")
@@ -208,14 +221,14 @@ class NitroCog(commands.Cog):
         member = ctx.author
         today_dt = datetime.datetime.combine(datetime.date.today(), datetime.time(0, 0, 0))
         user_id = member.id
-        result = self.nitro_usage.find_one({'user_id': user_id, 'date': today_dt})
+        result = await self.nitro_usage.find_one({'user_id': user_id, 'date': today_dt})
         if not result:
             result = {}
             result['count'] = 0
         if result:
             count = result['count']
             if member.premium_since:
-                boost_count = self.bot.check_boost(ctx.guild.id, member.id)
+                boost_count = await self.bot.check_boost(ctx.guild.id, member.id)
                 if not boost_count:
                     return await ctx.send("There was an error getting your boost count.")
                 if boost_count == 1:
@@ -230,7 +243,7 @@ class NitroCog(commands.Cog):
     @tasks.loop(hours=24)
     async def cleanup_old_limits(self):
         today_dt = datetime.datetime.combine(datetime.date.today() - datetime.timedelta(days=1), datetime.time(0, 0, 0))
-        self.nitro_usage.delete_many({'date': {'$lt': today_dt}})
+        await self.nitro_usage.delete_many({'date': {'$lt': today_dt}})
 
     @tasks.loop(minutes=5)
     async def update_embed(self):
@@ -259,7 +272,7 @@ class NitroCog(commands.Cog):
                 else:
                     self.logger.warning(f"Bot does not have access to {channel_id}")
         except discord.NotFound:
-            self.embed_settings.delete_one({'guild_id': guild_id})
+            await self.embed_settings.delete_one({'guild_id': guild_id})
             self.embed_var.remove(setting)
         except Exception as e:
             self.logger.exception("Failed to update embed")
@@ -268,12 +281,12 @@ class NitroCog(commands.Cog):
     @commands.is_owner()
     async def enable_embed(self, ctx):
         await ctx.message.delete()
-        existing_entry = self.embed_settings.find_one({'guild_id': ctx.guild.id})
+        existing_entry = await self.embed_settings.find_one({'guild_id': ctx.guild.id})
         if existing_entry:
             return await ctx.send("Embed updates are already enabled in this channel.", delete_after=5)
         embed = discord.Embed(title="Enabled embed updates", description="The main content will be here soon.", color=discord.Color.green())
         message = await ctx.send(embed=embed)
-        self.embed_settings.insert_one({
+        await self.embed_settings.insert_one({
             'guild_id': ctx.guild.id,
             'channel_id': ctx.channel.id,
             'message_id': message.id
@@ -285,7 +298,7 @@ class NitroCog(commands.Cog):
     @commands.is_owner()
     async def disable_embed(self,ctx):
         await ctx.message.delete()
-        existing_entry = self.embed_settings.find_one({'guild_id': ctx.guild.id})
+        existing_entry = await self.embed_settings.find_one({'guild_id': ctx.guild.id})
         if not existing_entry:
             return await ctx.send("Embed updates are not enabled in this channel.", delete_after=5)
         try:
@@ -293,7 +306,7 @@ class NitroCog(commands.Cog):
             await message.delete()
         except:
             pass
-        self.embed_settings.delete_one({'guild_id': ctx.guild.id})
+        await self.embed_settings.delete_one({'guild_id': ctx.guild.id})
         for i in self.embed_var:
             if i['channel_id'] == ctx.channel.id:
                 self.embed_var.remove(i)
@@ -305,12 +318,12 @@ class NitroCog(commands.Cog):
         if not ctx.interaction: await ctx.message.delete()
         if choice is None:
             self.nitro_toggle = not self.nitro_toggle
-            self.bot.counter.find_one_and_update({'_id': 'nitro_toggle'}, {'$set': {'state': self.nitro_toggle}}, upsert=True)
+            await self.bot.counter.find_one_and_update({'_id': 'nitro_toggle'}, {'$set': {'state': self.nitro_toggle}}, upsert=True)
             await self.bot.respond(ctx, f"Nitro commands {'enabled' if self.nitro_toggle else 'disabled'}")
         else:
             # toggle the new nitro system
             self.new_nitro_system = not self.new_nitro_system
-            self.bot.counter.find_one_and_update({'_id': 'new_nitro_system'}, {'$set': {'state': self.new_nitro_system}}, upsert=True)
+            await self.bot.counter.find_one_and_update({'_id': 'new_nitro_system'}, {'$set': {'state': self.new_nitro_system}}, upsert=True)
             await self.bot.respond(ctx, f"New nitro system {'enabled' if self.new_nitro_system else 'disabled'}")
 
 async def setup(bot):

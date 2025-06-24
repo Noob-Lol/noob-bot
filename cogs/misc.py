@@ -11,8 +11,8 @@ class MiscCog(commands.Cog):
     @commands.cooldown(1, 5, commands.BucketType.user)
     async def add(self, ctx):
         counter = self.bot.counter
-        counter.find_one_and_update({'_id': 'counter'}, {'$inc': {'count': 1}}, upsert=True)
-        result = counter.find_one({'_id': 'counter'})
+        await counter.find_one_and_update({'_id': 'counter'}, {'$inc': {'count': 1}}, upsert=True)
+        result = await counter.find_one({'_id': 'counter'})
         if result:
             await ctx.send(f'Counter incremented to {result["count"]}')
 
@@ -60,7 +60,7 @@ class MiscCog(commands.Cog):
             "X-RapidAPI-Key": "a3a7d073famsh43a70b10b861ed7p115a35jsnb340981d017b",
             "X-RapidAPI-Host": "weatherapi-com.p.rapidapi.com"
         }
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
             async with session.get("https://weatherapi-com.p.rapidapi.com/forecast.json", headers=headers, params={"q":city,"days":"3"}) as response:
                 if response.status != 200:
                     await ctx.send("Failed to fetch weather data.")
