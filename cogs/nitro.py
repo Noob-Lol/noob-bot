@@ -89,7 +89,7 @@ class NitroCog(commands.Cog):
                         # old nitro system
                         today_dt = datetime.datetime.combine(datetime.date.today(), datetime.time(0, 0, 0))
                         result = await self.nitro_usage.find_one({'user_id': user_id, 'date': today_dt})
-                        limit = self.limit
+                        limit = self.nitro_limit
                         if result:
                             rcount = result['count']
                             if ctx.author.premium_since:
@@ -131,7 +131,7 @@ class NitroCog(commands.Cog):
                         else:
                             break
                     await self.bot.counter.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': count}}, upsert=True)
-                    self.count += count
+                    self.nitro_counter += count
                     codes = '\n'.join(codes)
                     await self.bot.log(f'{ctx.author.name} got {count} nitro codes: {codes}', 'nitro_log.txt')
                     codes = f'```\n{codes}```'
@@ -149,7 +149,7 @@ class NitroCog(commands.Cog):
                 else:
                     first_line = lines[0].strip()
                     await self.bot.counter.find_one_and_update({'_id': 'nitro_counter'}, {'$inc': {'count': 1}}, upsert=True)
-                    self.count += 1
+                    self.nitro_counter += 1
                     await self.bot.log(f'{ctx.author.name} got nitro code: {first_line}', 'nitro_log.txt')
                     if 'https://' in first_line:
                         first_line = first_line.split('https://')[1]
@@ -197,7 +197,7 @@ class NitroCog(commands.Cog):
         elif limit == "b2mult":
             self.b2mult = amount
         else:
-            self.limit = amount
+            self.nitro_limit = amount
         await self.bot.counter.find_one_and_update({'_id': limit}, {'$set': {'count': amount}}, upsert=True)
         await ctx.send(f"Updated {limit} to {amount}.")
     
@@ -208,7 +208,7 @@ class NitroCog(commands.Cog):
             return await self.bot.respond(ctx, "Nitro commands are disabled.")
         if self.new_nitro_system:
             return await ctx.send("1 promo = 1 nitro credit")
-        await ctx.send(f"Current nitro limit (daily): {self.limit}, multipliers: 1 boost = {self.b1mult}, 2 boosts = {self.b2mult}")
+        await ctx.send(f"Current nitro limit (daily): {self.nitro_limit}, multipliers: 1 boost = {self.b1mult}, 2 boosts = {self.b2mult}")
 
     @commands.hybrid_command(name="usage", help="View nitro usage.")
     @commands.cooldown(1, 10, commands.BucketType.user)
@@ -232,13 +232,13 @@ class NitroCog(commands.Cog):
                 if not boost_count:
                     return await ctx.send("There was an error getting your boost count.")
                 if boost_count == 1:
-                    await ctx.send(f"1 boost. Your usage is {count}/{self.limit*self.b1mult}.")
+                    await ctx.send(f"1 boost. Your usage is {count}/{self.nitro_limit*self.b1mult}.")
                 elif boost_count == 2:
-                    await ctx.send(f"2 boosts. Your usage is {count}/{self.limit*self.b2mult}.")
+                    await ctx.send(f"2 boosts. Your usage is {count}/{self.nitro_limit*self.b2mult}.")
                 else:
-                    await ctx.send(f"{boost_count} boosts. There are no more perks after 2 boosts. Your usage is {count}/{self.limit*self.b2mult}.")
+                    await ctx.send(f"{boost_count} boosts. There are no more perks after 2 boosts. Your usage is {count}/{self.nitro_limit*self.b2mult}.")
             else:
-                await ctx.send(f"No boosts. Your usage is {count}/{self.limit}.")
+                await ctx.send(f"No boosts. Your usage is {count}/{self.nitro_limit}.")
 
     @tasks.loop(hours=24)
     async def cleanup_old_limits(self):
@@ -247,6 +247,7 @@ class NitroCog(commands.Cog):
 
     @tasks.loop(minutes=5)
     async def update_embed(self):
+        await self.bot.wait_until_ready()
         try:
             for setting in self.embed_var:
                 guild_id = setting['guild_id']
@@ -265,7 +266,7 @@ class NitroCog(commands.Cog):
                     embed.add_field(name="Users", value=f"{len(self.bot.users)}")
                     embed.add_field(name="Ping", value=f"{round (self.bot.latency * 1000)} ms")
                     embed.add_field(name="Nitro stock", value=f"{nitro_count}")
-                    embed.add_field(name="Nitro given", value=f"{self.count}")
+                    embed.add_field(name="Nitro given", value=f"{self.nitro_counter}")
                     embed.set_footer(text="coded by n01b")
                     message = await channel.fetch_message(message_id)
                     await message.edit(embed=embed)
