@@ -1,4 +1,4 @@
-import discord, os, aiohttp, dotenv, atexit, logging, aiofiles, time
+import discord, os, aiohttp, dotenv, atexit, logging, time
 from aiohttp import web
 from typing import Optional
 from discord import app_commands
@@ -82,10 +82,7 @@ class Bot(commands.Bot):
                     async with session.get(f'https://{download_url}') as file_response:
                         rtext = await file_response.text()
                 else: rtext = ''
-                async with aiofiles.tempfile.NamedTemporaryFile(mode='w+') as temp_file:
-                    await temp_file.write(rtext + text + '\n')
-                    await temp_file.seek(0)
-                    content = await temp_file.read()
+                content = rtext + text + '\n'
                 data = aiohttp.FormData()
                 data.add_field('filename', content, filename=file)
                 await session.post("/uploadfile", data=data, params={'path': f'/{folder}', 'auth': PTOKEN})
@@ -107,18 +104,15 @@ class Bot(commands.Bot):
                 download_url = file_url['hosts'][0] + file_url['path']
                 async with session.get(f'https://{download_url}') as file_response:
                     text = await file_response.text()
-                    lines = text.splitlines()
-                    if not lines:
-                        return 0
-                    if num_lines == 0:
-                        return len(lines)
-                    if num_lines > len(lines):
-                        num_lines = len(lines)
-                    lines2 = lines[:num_lines]
-                async with aiofiles.tempfile.NamedTemporaryFile(mode='w+') as temp_file:
-                    await temp_file.write("\n".join(lines[num_lines:]))
-                    await temp_file.seek(0)
-                    content = await temp_file.read()
+                lines = text.splitlines()
+                if not lines:
+                    return 0
+                if num_lines == 0:
+                    return len(lines)
+                if num_lines > len(lines):
+                    num_lines = len(lines)
+                lines2 = lines[:num_lines]
+                content = "\n".join(lines[num_lines:])
                 data = aiohttp.FormData()
                 data.add_field('filename', content, filename=file)
                 await session.post("/uploadfile", data=data, params={'path': f'/{folder}', 'auth': PTOKEN})
@@ -338,6 +332,6 @@ async def on_ready():
     await runner.setup()
     await web.TCPSite(runner, '0.0.0.0', 8000).start()
     await bot.change_presence(activity=discord.CustomActivity(name='im cool 😎, ">" prefix'))
-    logger.info(f'Logged in as {bot.user}, time: {time.time()-start_time:.2f}s, latency: {round(bot.latency * 1000)}ms')
+    logger.info(f'Logged in as {bot.user}, in {time.time()-start_time:.2f}s, ping: {round(bot.latency * 1000)}ms')
 
 bot.run(TOKEN)

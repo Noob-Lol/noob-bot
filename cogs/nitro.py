@@ -19,22 +19,13 @@ class NitroCog(commands.Cog):
         # load variables in async
         self.embed_var = [doc async for doc in self.embed_settings.find()]
         counter_ids = ['nitro_counter', 'nitro_limit', 'b1mult', 'b2mult', 'new_nitro_system', 'nitro_toggle']
-        coros = [self.bot.counter.find_one({'_id': counter_id}) for counter_id in counter_ids] # await
-        results = await asyncio.gather(*coros)
-        # Map results
+        results = await asyncio.gather(*[self.bot.counter.find_one({'_id': _id}) for _id in counter_ids])
+        # Map results to instance variables
         for _id, doc in zip(counter_ids, results):
-            if doc is None:
-                # fallback defaults if no doc found
-                if _id in ['new_nitro_system', 'nitro_toggle']:
-                    setattr(self, _id, True)
-                else:
-                    setattr(self, _id, 0)
-            else:
-                # 'count' for most, 'state' for the last two
-                if _id in ['new_nitro_system', 'nitro_toggle']:
-                    setattr(self, _id, doc.get('state', True))
-                else:
-                    setattr(self, _id, doc.get('count', 0))
+            value = doc.get('count', 0) if doc else 0
+            if _id in ['new_nitro_system', 'nitro_toggle']:
+                value = doc.get('state', True) if doc else True
+            setattr(self, _id, value)
         if not self.nitro_toggle:
             self.logger.warning("Nitro commands are disabled.")
         elif not self.new_nitro_system:
