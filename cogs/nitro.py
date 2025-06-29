@@ -84,7 +84,7 @@ class NitroCog(commands.Cog):
                         if result:
                             rcount = result['count']
                             if ctx.author.premium_since:
-                                boost_count = self.bot.check_boost(ctx.guild.id, user_id)
+                                boost_count = await self.bot.check_boost(ctx.guild.id, user_id)
                                 if not boost_count:
                                     return await ctx.send("There was an error getting your boost count.")
                                 if boost_count == 1:
