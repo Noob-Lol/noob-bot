@@ -1,4 +1,4 @@
-import discord, os, aiohttp, dotenv, atexit, logging, time
+import discord, os, aiohttp, dotenv, logging, time
 from aiohttp import web
 from typing import Optional
 from discord import app_commands
@@ -30,8 +30,6 @@ counter = db['counter']
 unloaded_coll = db['unloaded_cogs']
 disabled_coll = db['disabled_channels']
 disabled_com_coll = db['disabled_commands']
-# default aiohttp timeout
-def_TO = aiohttp.ClientTimeout(7)
 
 class Bot(commands.Bot):
     def __init__(self):
@@ -43,6 +41,7 @@ class Bot(commands.Bot):
         self.react = False
 
     async def setup_hook(self):
+        self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(7))
         await client.aconnect()
         global unloaded_cogs, disabled_channels, disabled_commands
         unloaded_cogs = {cog['cog'] async for cog in unloaded_coll.find()}
@@ -62,73 +61,79 @@ class Bot(commands.Bot):
                 logger.info(f'Disabling command: {command.name}')
                 command.enabled = False
 
+    async def close(self):
+        await super().close()
+        await self.session.close()
+        await client.aclose()
+        logger.info('Stopped.')
+
     def cog_logger(self, cog_name: str):
         l = logging.getLogger(f'discord.n01b.{cog_name}')
         l.name = f'bot.{cog_name}' if not bot_name in cog_name else cog_name
         return l
 
+    async def download_file(self, file: str):
+        """Download file content from pCloud and return as text."""
+        async with self.session.get(f"{api}/listfolder", params={'path': f'/{folder}', 'auth': PTOKEN}) as response:
+            files = await response.json()
+            if files["result"] != 0:
+                logger.error(f"Failed to list folder {folder}: {files['result']}, error: {files.get('error', 'Unknown error')}")
+                return ''
+        file_info = next((f for f in files.get('metadata', {}).get('contents', []) if f['name'] == file), None)
+        if not file_info:
+            logger.error(f"File '{file}' not found in folder '{folder}'.")
+            return ''
+        async with self.session.get(f"{api}/getfilelink", params={'fileid': file_info['fileid'], 'auth': PTOKEN}) as file_url_response:
+            file_url = await file_url_response.json()
+        download_url = file_url['hosts'][0] + file_url['path']
+        async with self.session.get(f'https://{download_url}') as file_response:
+            return await file_response.text()
+
+    async def upload_file(self, file: str, content: str):
+        """Upload content to a file in pCloud."""
+        data = aiohttp.FormData()
+        data.add_field('filename', content, filename=file)
+        await self.session.post(f"{api}/uploadfile", data=data, params={'path': f'/{folder}', 'auth': PTOKEN})
+
     async def log(self, text: str, file: str):
         try:
-            async with aiohttp.ClientSession(api, timeout=def_TO) as session:
-                async with session.get("/listfolder", params={'path': f'/{folder}', 'auth': PTOKEN}) as response:
-                    files = await response.json()
-                    if files["result"] != 0:
-                        return logger.error(f"Failed to list folder {folder}: {files['result']}, error: {files.get('error', 'Unknown error')}")
-                file_info = next((f for f in files.get('metadata', {}).get('contents', []) if f['name'] == file), None)
-                if file_info:
-                    async with session.get("/getfilelink", params={'fileid': file_info['fileid'], 'auth': PTOKEN}) as file_url_response:
-                        file_url = await file_url_response.json()
-                    download_url = file_url['hosts'][0] + file_url['path']
-                    async with session.get(f'https://{download_url}') as file_response:
-                        rtext = await file_response.text()
-                else: rtext = ''
-                content = rtext + text + '\n'
-                data = aiohttp.FormData()
-                data.add_field('filename', content, filename=file)
-                await session.post("/uploadfile", data=data, params={'path': f'/{folder}', 'auth': PTOKEN})
+            rtext = await self.download_file(file)
+            content = rtext + text + '\n'
+            await self.upload_file(file, content)
         except Exception as e:
             logger.exception(f'Error logging to {file}')
-    
+
     async def get_lines(self, num_lines: int, file: str):
         try:
-            async with aiohttp.ClientSession(api, timeout=def_TO) as session:
-                async with session.get("/listfolder", params={'path': f'/{folder}', 'auth': PTOKEN}) as response:
-                    files = await response.json()
-                    if files["result"] != 0:
-                        return logger.error(f"Failed to list folder {folder}: {files['result']}, error: {files.get('error', 'Unknown error')}")
-                file_info = next((f for f in files.get('metadata', {}).get('contents', []) if f['name'] == file), None)
-                if not file_info:
-                    return logger.error(f"File '{file}' not found in folder '{folder}'.")
-                async with session.get("/getfilelink", params={'fileid': file_info['fileid'], 'auth': PTOKEN}) as file_url_response:
-                    file_url = await file_url_response.json()
-                download_url = file_url['hosts'][0] + file_url['path']
-                async with session.get(f'https://{download_url}') as file_response:
-                    text = await file_response.text()
-                lines = text.splitlines()
-                if not lines:
-                    return 0
-                if num_lines == 0:
-                    return len(lines)
-                if num_lines > len(lines):
-                    num_lines = len(lines)
-                lines2 = lines[:num_lines]
-                content = "\n".join(lines[num_lines:])
-                data = aiohttp.FormData()
-                data.add_field('filename', content, filename=file)
-                await session.post("/uploadfile", data=data, params={'path': f'/{folder}', 'auth': PTOKEN})
-            return lines2
+            text = await self.download_file(file)
+            lines = text.splitlines()
+            if not lines:
+                return None
+            if num_lines > len(lines):
+                num_lines = len(lines)
+            lines_list = lines[:num_lines]
+            content = "\n".join(lines[num_lines:])
+            await self.upload_file(file, content)
+            return lines_list
         except Exception as e:
             logger.exception(f'Error getting lines from {file}')
+            return None
+        
+    async def count_lines(self, file: str):
+        try:
+            text = await self.download_file(file)
+            return len(text.splitlines())
+        except Exception as e:
+            logger.exception(f'Error counting lines in {file}')
             return None
     
     async def check_boost(self, guild_id: int, member_id: int):
         try:
-            async with aiohttp.ClientSession(headers={'authorization': RTOKEN}, timeout=def_TO) as session:
-                response = await session.get(f'https://discord.com/api/v10/guilds/{guild_id}/premium/subscriptions')
-                if response.status != 200:
-                    logger.error(f'Error getting boost count for guild {guild_id}: {response.status}')
-                    return False
-                response = await response.json()
+            response = await self.session.get(f'https://discord.com/api/v10/guilds/{guild_id}/premium/subscriptions', headers={'authorization': RTOKEN})
+            if response.status != 200:
+                logger.error(f'Error getting boost count for guild {guild_id}: {response.status}')
+                return False
+            response = await response.json()
             if isinstance(response, list):
                 boost_count = 0
                 for boost in response:
@@ -143,7 +148,7 @@ class Bot(commands.Bot):
             logger.error(f'Error checking boost for guild {guild_id}, member {member_id}: {e}')
             return False
         
-    async def respond(self, ctx, text, delete_after=5, ephemeral=True):
+    async def respond(self, ctx: commands.Context, text: str, delete_after=5, ephemeral=True):
         # default respond function (saves space)
         if ctx.interaction: await ctx.send(text, ephemeral = ephemeral)
         else: await ctx.send(text, delete_after = delete_after)
@@ -157,10 +162,6 @@ bot = Bot()
 #         ctx.logger = bot.cog_logger(f'{ctx.cog.qualified_name}.{ctx.command.name}')
 #     else:
 #         ctx.logger = bot.cog_logger(f'{bot_name}.{ctx.command.name}')
-
-@atexit.register
-def on_exit():
-    logger.info("Stopped.")
 
 def p(desc, default = None):
     return commands.parameter(description=desc, default=default)
@@ -185,7 +186,7 @@ async def on_command(ctx):
         ctx.command.reset_cooldown(ctx)
 
 @bot.event
-async def on_command_error(ctx, error):
+async def on_command_error(ctx: commands.Context, error):
     if hasattr(ctx.command, 'on_error') and not hasattr(ctx, 'unhandled_error'):
         return
     ignored = (commands.CommandNotFound, app_commands.errors.CommandNotFound, )
@@ -201,7 +202,7 @@ async def on_command_error(ctx, error):
         logger.error(f"Bad request: {error.text}")
     elif isinstance(error, commands.CommandOnCooldown):
         await ctx.send(f"This command is on cooldown. Please wait {error.retry_after:.2f}s", ephemeral = True, delete_after = 5)
-    else: await ctx.send(error, ephemeral = True)
+    else: await ctx.send(str(error), ephemeral = True)
 
 @bot.event
 async def on_message(message):
@@ -256,9 +257,8 @@ async def msg(ctx, channel: Optional[discord.TextChannel] = None, *, text: str):
         app_commands.Choice(name = 'react', value = 'react')
     ]
 )
-async def toggle_thing(ctx, type: str = p(descripts['type']), name: Optional[str] = p(descripts['name'])):
-    if not ctx.interaction:
-        await ctx.message.delete()
+async def toggle_thing(ctx: commands.Context, type: str = p(descripts['type']), name: Optional[str] = p(descripts['name'])):
+    if not ctx.interaction: await ctx.message.delete()
     if type == 'cog':
         cog = name
         if not cog:
@@ -334,4 +334,5 @@ async def on_ready():
     await bot.change_presence(activity=discord.CustomActivity(name='im cool 😎, ">" prefix'))
     logger.info(f'Logged in as {bot.user}, in {time.time()-start_time:.2f}s, ping: {round(bot.latency * 1000)}ms')
 
-bot.run(TOKEN)
+if __name__ == "__main__":
+    bot.run(TOKEN)

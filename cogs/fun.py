@@ -3,8 +3,9 @@ from discord.ext import commands
 from discord import app_commands
 from gradio_client import Client
 from openai import AsyncOpenAI
+from bot import Bot
 
-def split_response(response, max_length=1900):
+def split_response(response: str, max_length=1900):
     lines = response.splitlines()
     chunks = []
     current_chunk = ""
@@ -19,7 +20,7 @@ def split_response(response, max_length=1900):
     return chunks
 
 class FunCog(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: Bot):
         self.bot = bot
         self.logger = self.bot.cog_logger(self.__class__.__name__)
         self.hf_token = os.environ['HF_TOKEN']
@@ -46,9 +47,8 @@ class FunCog(commands.Cog):
 
     @commands.hybrid_command(name="cat", help="Sends a random cat image")
     async def cat(self, ctx):
-        async with aiohttp.ClientSession() as session:
-            response = await session.get("https://api.thecatapi.com/v1/images/search")
-            data = await response.json()
+        response = await self.bot.session.get("https://api.thecatapi.com/v1/images/search")
+        data = await response.json()
         await ctx.send(data[0]["url"])
 
     @commands.hybrid_command(name="flip", help="Flips a coin")
@@ -69,9 +69,8 @@ class FunCog(commands.Cog):
 
     @commands.hybrid_command(name="joke", help="Sends a random joke")
     async def joke(self, ctx):
-        async with aiohttp.ClientSession() as session:
-            response = await session.get("https://v2.jokeapi.dev/joke/Any?blacklistFlags=nsfw,religious,political,racist,sexist,explicit")
-            joke = await response.json()
+        response = await self.bot.session.get("https://v2.jokeapi.dev/joke/Any?blacklistFlags=nsfw,religious,political,racist,sexist,explicit")
+        joke = await response.json()
         if joke["type"] == "single":
             await ctx.send(joke["joke"])
         else:
@@ -80,7 +79,7 @@ class FunCog(commands.Cog):
     @commands.hybrid_command(name="chat", help="Chat with ai")
     @commands.cooldown(1, 30, commands.BucketType.user)
     @app_commands.describe(prompt="A prompt for the ai")
-    async def ai_chat(self, ctx, *, prompt: str):
+    async def ai_chat(self, ctx: commands.Context, *, prompt: str):
         await ctx.defer()
         try:
             async with ctx.typing():
@@ -106,6 +105,9 @@ class FunCog(commands.Cog):
                     self.logger.exception('Error in ai_chat command while creating completion')
                     return await ctx.reply("Something went wrong, please try again later")
                 msg = completion.choices[0].message.content
+                if not msg:
+                    self.logger.error('Empty response from ai_chat command')
+                    return await ctx.reply("Something went wrong, please try again later")
                 chunks = split_response(msg)
                 for chunk in chunks:
                     await ctx.reply(chunk)
@@ -121,7 +123,7 @@ class FunCog(commands.Cog):
             app_commands.Choice(name="merged", value="merged"),
             app_commands.Choice(name="dev", value="dev")
         ])
-    async def image(self, ctx, *, prompt: str, seed: int = 0, width: int = 1024, height: int = 1024, guidance_scale: float = 3.5, steps: int = 4, model: str = "schnell"):
+    async def image(self, ctx: commands.Context, *, prompt: str, seed: int = 0, width: int = 1024, height: int = 1024, guidance_scale: float = 3.5, steps: int = 4, model: str = "schnell"):
         await ctx.defer()
         await self.bot.log(f'{ctx.author}, prompt: {prompt}, seed: {seed}, width: {width}, height: {height}, guidance_scale: {guidance_scale},steps: {steps}, model: {model}', "log.txt")
         # i will manually ban users who type something offensive
@@ -151,5 +153,5 @@ class FunCog(commands.Cog):
         else:
             await ctx.send("Sorry, there was an issue generating the image.")
 
-async def setup(bot):
+async def setup(bot: Bot):
     await bot.add_cog(FunCog(bot))

@@ -1,9 +1,10 @@
 import discord, platform, aiohttp
 from discord.ext import commands
 from discord import app_commands
+from bot import Bot
 
 class MiscCog(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: Bot):
         self.bot = bot
         self.logger = bot.cog_logger(self.__class__.__name__)
 
@@ -54,19 +55,18 @@ class MiscCog(commands.Cog):
 
     @commands.hybrid_command(name="weather", help="Sends the weather for a city")
     @app_commands.describe(city="City name")
-    async def weather(self, ctx, *, city: str):
+    async def weather(self, ctx: commands.Context, *, city: str):
         headers = {
              # this is not my api key
             "X-RapidAPI-Key": "a3a7d073famsh43a70b10b861ed7p115a35jsnb340981d017b",
             "X-RapidAPI-Host": "weatherapi-com.p.rapidapi.com"
         }
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
-            async with session.get("https://weatherapi-com.p.rapidapi.com/forecast.json", headers=headers, params={"q":city,"days":"3"}) as response:
-                if response.status != 200:
-                    await ctx.send("Failed to fetch weather data.")
-                    self.logger.error(f"Weather API request failed with status {response.status}")
-                    return
-                weather = await response.json()
+        async with self.bot.session.get("https://weatherapi-com.p.rapidapi.com/forecast.json", headers=headers, params={"q":city,"days":"3"}) as response:
+            if response.status != 200:
+                await ctx.send("Failed to fetch weather data.")
+                self.logger.error(f"Weather API request failed with status {response.status}")
+                return
+            weather = await response.json()
         bad_json = {'message': 'This endpoint is disabled for your subscription'}
         if weather == bad_json:
             await ctx.send("This api key is cooked, owner needs to get a new one")
@@ -83,5 +83,5 @@ class MiscCog(commands.Cog):
             embed.add_field(name=forecast['date'], value=f"{forecast['day']['maxtemp_c']} ~ {forecast['day']['mintemp_c']}℃, rain chance: {forecast['day']['daily_chance_of_rain']}", inline=False)
         await ctx.send(embed=embed)
 
-async def setup(bot):
+async def setup(bot: Bot):
     await bot.add_cog(MiscCog(bot))

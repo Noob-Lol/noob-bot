@@ -1,9 +1,10 @@
 import discord, random, datetime
 from discord.ext import commands, tasks
 from discord.ui import View, Button
+from bot import Bot
 
 class EconomyCog(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: Bot):
         self.bot = bot
         self.collection = bot.db["economy"]
         self.farm_usage = bot.db["farm_usage"]
@@ -11,7 +12,7 @@ class EconomyCog(commands.Cog):
 
     @commands.hybrid_command(name="farm", help="Gives some nitro credits")
     @commands.cooldown(1, 10, commands.BucketType.user)
-    async def farm(self, ctx):
+    async def farm(self, ctx: commands.Context):
         today_dt = datetime.datetime.combine(datetime.date.today(), datetime.time(0, 0, 0))
         user_id = ctx.author.id
         result = await self.farm_usage.find_one({'_id': user_id})
@@ -74,8 +75,10 @@ class EconomyCog(commands.Cog):
 
     @commands.hybrid_command(name="leaderboard", help="Displays the leaderboard of top users")
     @commands.cooldown(1, 30, commands.BucketType.user)
-    async def leaderboard(self, ctx):
+    async def leaderboard(self, ctx: commands.Context):
         await ctx.defer(ephemeral=True)
+        if not ctx.guild:
+            return await ctx.send("This command can only be used in a guild.")
         users = await self.collection.find({}).to_list(length=100)
         this_guild = []
         for user in users:
@@ -90,7 +93,7 @@ class EconomyCog(commands.Cog):
             return
         page_size, current_page = 5, 0
         total_pages = (len(leaderboard) // page_size) + (1 if len(leaderboard) % page_size > 0 else 0)
-        def build_embed(page):
+        def build_embed(page: int):
             start = page * page_size
             end = start + page_size
             page_data = leaderboard[start:end]
@@ -104,9 +107,9 @@ class EconomyCog(commands.Cog):
                 embed.add_field(name=f"{index}. {username}", value=f"{balance} nitro credits", inline=False)
             embed.set_footer(text=f"Page {page+1}/{total_pages}, timeouts in 60 seconds")
             return embed
-        async def update_embed(interaction, page):
+        async def update_embed(interaction: discord.Interaction, page):
             await interaction.response.edit_message(embed=build_embed(page), view=build_view(page))
-        def build_view(page):
+        def build_view(page: int):
             prev_button = Button(label="Previous", style=discord.ButtonStyle.primary, disabled=page == 0)
             next_button = Button(label="Next", style=discord.ButtonStyle.primary, disabled=page == total_pages - 1)
             async def prev_callback(interaction):
@@ -128,5 +131,5 @@ class EconomyCog(commands.Cog):
         today_dt = datetime.datetime.combine(datetime.date.today() - datetime.timedelta(days=1), datetime.time(0, 0, 0))
         await self.farm_usage.delete_many({'last_farm': {'$lt': today_dt}})
 
-async def setup(bot):
+async def setup(bot: Bot):
     await bot.add_cog(EconomyCog(bot))

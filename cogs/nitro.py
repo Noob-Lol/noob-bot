@@ -1,13 +1,14 @@
 import discord, os, datetime, asyncio
 from discord import app_commands
 from discord.ext import commands, tasks
+from bot import Bot
 
 desc1, desc2 = "How many codes", "Where to send"
 def p(desc, default = None):
     return commands.parameter(description=desc, default=default)
 
 class NitroCog(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: Bot):
         self.bot = bot
         self.logger = bot.cog_logger(self.__class__.__name__)
         self.nitro_usage = bot.db['nitro_usage']
@@ -41,13 +42,15 @@ class NitroCog(commands.Cog):
             app_commands.Choice(name="channel (here)", value="channel")
         ]
     )
-    async def nitro(self, ctx, amount: int = p(desc1, 1), place: str = p(desc2, "dm")):
+    async def nitro(self, ctx: commands.Context, amount: int = p(desc1, 1), place: str = p(desc2, "dm")):
         if not self.nitro_toggle:
             if not ctx.interaction: await ctx.message.delete()
             return await self.bot.respond(ctx, "Nitro commands are disabled.")
         if os.path.exists(f'{self.bot.script_path}/lock.txt'):
             if not ctx.interaction: await ctx.message.delete()
             return await self.bot.respond(ctx, 'The bot is in maintenance, please retry later.')
+        if not isinstance(ctx.author, discord.Member) or not ctx.guild:
+            return await ctx.send("You must be in a server to use this command.")
         place = place.lower()
         if place != "dm" and place != "channel":
             return await self.bot.respond(ctx, "Invalid place. Must be 'dm' or 'channel'.")
@@ -56,7 +59,7 @@ class NitroCog(commands.Cog):
         if amount < 0:
             return await self.bot.respond(ctx, "Amount can't be negative.")
         try:
-            lines = await self.bot.get_lines(0, 'nitro.txt')
+            lines = await self.bot.count_lines("nitro.txt")
             if lines is None:
                 return await ctx.send("There was an error checking the code stock.")
             if lines > 0:
@@ -245,7 +248,7 @@ class NitroCog(commands.Cog):
                 channel_id = setting['channel_id']
                 message_id = setting['message_id']
                 channel = self.bot.get_channel(channel_id)
-                if channel:
+                if channel and isinstance(channel, discord.TextChannel):
                     if self.nitro_toggle:
                         nitro_count = await self.bot.get_lines(0, 'nitro.txt')
                         if nitro_count is None:
@@ -261,6 +264,8 @@ class NitroCog(commands.Cog):
                     embed.set_footer(text="coded by n01b")
                     message = await channel.fetch_message(message_id)
                     await message.edit(embed=embed)
+                elif channel:
+                    self.logger.warning(f"Channel {channel_id} is not a TextChannel, skipping embed update.")
                 else:
                     self.logger.warning(f"Bot does not have access to {channel_id}")
         except discord.NotFound:
@@ -318,5 +323,5 @@ class NitroCog(commands.Cog):
             await self.bot.counter.find_one_and_update({'_id': 'new_nitro_system'}, {'$set': {'state': self.new_nitro_system}}, upsert=True)
             await self.bot.respond(ctx, f"New nitro system {'enabled' if self.new_nitro_system else 'disabled'}")
 
-async def setup(bot):
+async def setup(bot: Bot):
     await bot.add_cog(NitroCog(bot))
