@@ -250,7 +250,7 @@ class NitroCog(commands.Cog):
                 channel = self.bot.get_channel(channel_id)
                 if channel and isinstance(channel, discord.TextChannel):
                     if self.nitro_toggle:
-                        nitro_count = await self.bot.get_lines(0, 'nitro.txt')
+                        nitro_count = await self.bot.count_lines('nitro.txt')
                         if nitro_count is None:
                             nitro_count = "Error"
                     else:
