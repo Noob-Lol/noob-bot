@@ -21,9 +21,9 @@ class MiscCog(commands.Cog):
     async def dmme(self, ctx, *, text: str):
         try:
             await ctx.author.send(text)
-            await self.bot.respond(ctx, "DM was sent")
+            await self.bot.respond(ctx, "DM was sent", del_cmd=False)
         except Exception as e:
-            await self.bot.respond(ctx, f"Could not send DM, {e}")
+            await self.bot.respond(ctx, f"Could not send DM, {e}", del_cmd=False)
 
     @commands.hybrid_command(name="cb", help="Check boost count of a user")
     @commands.cooldown(1, 3, commands.BucketType.user)

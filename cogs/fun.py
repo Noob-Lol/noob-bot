@@ -125,7 +125,7 @@ class FunCog(commands.Cog):
         ])
     async def image(self, ctx: commands.Context, *, prompt: str, seed: int = 0, width: int = 1024, height: int = 1024, guidance_scale: float = 3.5, steps: int = 4, model: str = "schnell"):
         await ctx.defer()
-        await self.bot.log(f'{ctx.author}, prompt: {prompt}, seed: {seed}, width: {width}, height: {height}, guidance_scale: {guidance_scale},steps: {steps}, model: {model}', "log.txt")
+        await self.bot.log_to_file(f'{ctx.author}, prompt: {prompt}, seed: {seed}, width: {width}, height: {height}, guidance_scale: {guidance_scale},steps: {steps}, model: {model}', "log.txt")
         # i will manually ban users who type something offensive
         rand = True
         if seed != 0:

@@ -1,10 +1,9 @@
 import discord, os, aiohttp, dotenv, logging, time
 from aiohttp import web
-from typing import Optional
 from discord import app_commands
 from discord.ext import commands
 from pymongo import AsyncMongoClient
-if os.name == 'nt':
+if os.name == 'nt' and not os.getenv('WT_SESSION'):
     try:
         # this fixes logger colors on windows
         from colorama import just_fix_windows_console
@@ -64,8 +63,8 @@ class Bot(commands.Bot):
     async def close(self):
         await super().close()
         await self.session.close()
-        await client.aclose()
         logger.info('Stopped.')
+        await client.aclose()
 
     def cog_logger(self, cog_name: str):
         l = logging.getLogger(f'discord.n01b.{cog_name}')
@@ -95,7 +94,7 @@ class Bot(commands.Bot):
         data.add_field('filename', content, filename=file)
         await self.session.post(f"{api}/uploadfile", data=data, params={'path': f'/{folder}', 'auth': PTOKEN})
 
-    async def log(self, text: str, file: str):
+    async def log_to_file(self, text: str, file: str):
         try:
             rtext = await self.download_file(file)
             content = rtext + text + '\n'
@@ -148,10 +147,14 @@ class Bot(commands.Bot):
             logger.error(f'Error checking boost for guild {guild_id}, member {member_id}: {e}')
             return False
         
-    async def respond(self, ctx: commands.Context, text: str, delete_after=5, ephemeral=True):
+    async def respond(self, ctx: commands.Context, text: str, delete_after=5, ephemeral=True, del_cmd=True):
         # default respond function (saves space)
-        if ctx.interaction: await ctx.send(text, ephemeral = ephemeral)
-        else: await ctx.send(text, delete_after = delete_after)
+        if ctx.interaction:
+            await ctx.send(text, ephemeral = ephemeral)
+        else:
+            if del_cmd: await ctx.message.delete()
+            if not delete_after: return await ctx.send(text)
+            await ctx.send(text, delete_after = delete_after)
 
 bot = Bot()
 
@@ -163,10 +166,9 @@ bot = Bot()
 #     else:
 #         ctx.logger = bot.cog_logger(f'{bot_name}.{ctx.command.name}')
 
-def p(desc, default = None):
-    return commands.parameter(description=desc, default=default)
-
 descripts = {'type': 'The type of thing to toggle.', 'name': 'The name of the thing to toggle.'}
+def p(desc, default = None, *args,**kwargs):
+    return commands.parameter(description=desc, default=default, *args,**kwargs)
 
 @bot.check
 async def check_guild(ctx):
@@ -179,6 +181,15 @@ async def check_channel(ctx):
             await ctx.send("This channel is disabled.", ephemeral = True)
         return False
     return True
+
+# TODO: add this
+# @bot.check
+# async def check_user(ctx):
+#     if ctx.author.id in disabled_users and ctx.command.name != 'toggle':
+#         if ctx.interaction: 
+#             await ctx.send("You are disabled.", ephemeral = True)
+#         return False
+#     return True
 
 @bot.event
 async def on_command(ctx):
@@ -202,10 +213,13 @@ async def on_command_error(ctx: commands.Context, error):
         logger.error(f"Bad request: {error.text}")
     elif isinstance(error, commands.CommandOnCooldown):
         await ctx.send(f"This command is on cooldown. Please wait {error.retry_after:.2f}s", ephemeral = True, delete_after = 5)
-    else: await ctx.send(str(error), ephemeral = True)
+    elif isinstance(error, app_commands.CommandInvokeError) and isinstance(error.original, discord.NotFound):
+        logger.error(error)
+    else:
+        await ctx.send(str(error), ephemeral = True)
 
 @bot.event
-async def on_message(message):
+async def on_message(message: discord.Message):
     if message.author == bot.user:
         return
     if '>nitro' in message.content.lower():
@@ -217,7 +231,7 @@ async def on_message(message):
 
 @bot.hybrid_command(name="hi", help="Says hello")
 async def hi(ctx):
-    await ctx.send(f'Hello!')
+    await ctx.send('Hello!')
 
 @bot.hybrid_command(name="ping", help="Sends bot's latency.")
 async def ping(ctx):
@@ -234,12 +248,10 @@ async def dm(ctx, member:discord.Member, *, content):
 
 @bot.hybrid_command(name="msg", help="Sends message as bot")
 @commands.is_owner()
-async def msg(ctx, channel: Optional[discord.TextChannel] = None, *, text: str):
+async def msg(ctx, channel: discord.TextChannel | None, *, text: str):
     if not channel:
         channel = ctx.channel
         if not channel: return
-    if not ctx.interaction:
-        await ctx.message.delete()
     try:
         await channel.send(text)
         await bot.respond(ctx, "Message sent")
@@ -257,8 +269,7 @@ async def msg(ctx, channel: Optional[discord.TextChannel] = None, *, text: str):
         app_commands.Choice(name = 'react', value = 'react')
     ]
 )
-async def toggle_thing(ctx: commands.Context, type: str = p(descripts['type']), name: Optional[str] = p(descripts['name'])):
-    if not ctx.interaction: await ctx.message.delete()
+async def toggle_thing(ctx: commands.Context, type: str = p(descripts['type']), name: str | None = p(descripts['name'])):
     if type == 'cog':
         cog = name
         if not cog:
@@ -330,7 +341,11 @@ async def on_ready():
     app.router.add_get('/', web_status)
     runner = web.AppRunner(app)
     await runner.setup()
-    await web.TCPSite(runner, '0.0.0.0', 8000).start()
+    host, port = '0.0.0.0', 8000
+    try:
+        await web.TCPSite(runner, host, port).start()
+    except OSError:
+        logger.error(f'Port {port} is already in use')
     await bot.change_presence(activity=discord.CustomActivity(name='im cool 😎, ">" prefix'))
     logger.info(f'Logged in as {bot.user}, in {time.time()-start_time:.2f}s, ping: {round(bot.latency * 1000)}ms')
 
