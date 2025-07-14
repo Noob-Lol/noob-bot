@@ -240,7 +240,6 @@ async def on_message(message: discord.Message):
 @bot.hybrid_command(name="hi", help="Says hello")
 async def hi(ctx):
     await ctx.send('Hello!')
-    bot.logger.info('Hello!')
 
 @bot.hybrid_command(name="ping", help="Sends bot's latency.")
 async def ping(ctx):
@@ -360,7 +359,7 @@ async def on_ready():
 
 if __name__ == "__main__":
     discord.utils.setup_logging()
-    warn_log_packages = ['httpx']
+    warn_log_packages = ['httpx', 'aiohttp']
     for package in warn_log_packages:
         logging.getLogger(package).setLevel(logging.WARNING)
     bot.run(TOKEN, log_handler=None)
