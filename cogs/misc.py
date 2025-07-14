@@ -1,12 +1,12 @@
-import discord, platform, aiohttp
+import discord, platform
 from discord.ext import commands
 from discord import app_commands
-from bot import Bot
+from bot import Bot, Default_Cog
 
-class MiscCog(commands.Cog):
+class MiscCog(Default_Cog):
     def __init__(self, bot: Bot):
-        self.bot = bot
-        self.logger = bot.cog_logger(self.__class__.__name__)
+        super().__init__(bot)
+        # nothing is here, yet
 
     @commands.hybrid_command(name="add", help="Adds one to the database")
     @commands.cooldown(1, 5, commands.BucketType.user)

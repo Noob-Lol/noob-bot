@@ -1,12 +1,12 @@
 import discord, random, datetime
 from discord.ext import commands, tasks
 from discord.ui import View, Button
-from bot import Bot
+from bot import Bot, Default_Cog
 
-class EconomyCog(commands.Cog):
+class EconomyCog(Default_Cog):
     def __init__(self, bot: Bot):
-        self.bot = bot
-        self.collection = bot.db["economy"]
+        super().__init__(bot)
+        self.eco = bot.db["economy"]
         self.farm_usage = bot.db["farm_usage"]
         self.cleanup_old_farm.start()
 
@@ -24,54 +24,54 @@ class EconomyCog(commands.Cog):
         else:
             await self.farm_usage.insert_one({'_id': user_id, 'last_farm': today_dt})
         amount = 0.5
-        user = await self.collection.find_one({"_id": user_id})
+        user = await self.eco.find_one({"_id": user_id})
         if user:
             new_balance = user["balance"] + amount
             if new_balance % 1 == 0:
                 new_balance = int(new_balance)
-            await self.collection.update_one({"_id": user_id}, {"$set": {"balance": new_balance}})
+            await self.eco.update_one({"_id": user_id}, {"$set": {"balance": new_balance}})
         else:
             new_balance = amount
-            await self.collection.insert_one({"_id": user_id, "balance": new_balance})
-        await ctx.send(f"{ctx.author.mention}, you have been given {amount} nitro credits! Your new balance is {new_balance}.")
+            await self.eco.insert_one({"_id": user_id, "balance": new_balance})
+        await ctx.send(f"{ctx.author.mention}, you have been given {amount:g} nitro credits! Your new balance is {new_balance:g}.")
 
     @commands.hybrid_command(name="give", help="Gives nitro credits to another user")
     @commands.cooldown(1, 10, commands.BucketType.user)
     async def give(self, ctx, user: discord.User, amount: float):
         if amount < 1:
             return await ctx.send("Amount must be at least 1.")
-        author_data = await self.collection.find_one({"_id": ctx.author.id})
+        author_data = await self.eco.find_one({"_id": ctx.author.id})
         if not author_data:
             return await ctx.send("You don't have any nitro credits.")
         if author_data["balance"] < amount:
             return await ctx.send("You don't have enough nitro credits to give.")
         user_id = user.id
-        user_data = await self.collection.find_one({"_id": user_id})
+        user_data = await self.eco.find_one({"_id": user_id})
         if user_data:
             new_balance = user_data["balance"] + amount
-            await self.collection.update_one({"_id": user_id}, {"$set": {"balance": new_balance}})
+            await self.eco.update_one({"_id": user_id}, {"$set": {"balance": new_balance}})
         else:
             new_balance = amount
-            await self.collection.insert_one({"_id": user_id, "balance": new_balance})
-        await self.collection.update_one({"_id": ctx.author.id}, {"$inc": {"balance": -amount}})
-        await ctx.send(f"**{ctx.author.name}** gave **{user.name}** {amount} nitro credits. Their new balance is {new_balance}.")
+            await self.eco.insert_one({"_id": user_id, "balance": new_balance})
+        await self.eco.update_one({"_id": ctx.author.id}, {"$inc": {"balance": -amount}})
+        await ctx.send(f"**{ctx.author.name}** gave **{user.name}** {amount:g} nitro credits. Their new balance is {new_balance:g}.")
 
     @commands.hybrid_command(name="set_balance", help="Sets the user's nitro credits to a specific amount")
     @commands.has_permissions(administrator=True)
     async def set_balance(self, ctx, user: discord.User, amount: float):
         user_id = user.id
-        await self.collection.update_one({"_id": user_id}, {"$set": {"balance": amount}}, upsert=True)
+        await self.eco.update_one({"_id": user_id}, {"$set": {"balance": amount}}, upsert=True)
         await self.bot.respond(ctx, f"{user.name}'s balance has been set to {amount}.")
 
     @commands.hybrid_command(name="balance", help="Displays your current balance")
     async def balance(self, ctx):
         user_id = ctx.author.id
-        user = await self.collection.find_one({"_id": user_id})
+        user = await self.eco.find_one({"_id": user_id})
         if user:
             balance = user["balance"]
         else:
             return await ctx.send("You are not in database. (no nitro credits)")
-        await ctx.send(f"{ctx.author.mention}, your current balance is {balance}.")
+        await ctx.send(f"{ctx.author.mention}, your current balance is {balance:g}.")
 
     @commands.hybrid_command(name="leaderboard", help="Displays the leaderboard of top users")
     @commands.cooldown(1, 30, commands.BucketType.user)
@@ -79,7 +79,7 @@ class EconomyCog(commands.Cog):
         await ctx.defer(ephemeral=True)
         if not ctx.guild:
             return await ctx.send("This command can only be used in a guild.")
-        users = await self.collection.find({}).to_list(length=100)
+        users = await self.eco.find({}).to_list(length=100)
         this_guild = []
         for user in users:
             user_id = user["_id"]
@@ -104,7 +104,7 @@ class EconomyCog(commands.Cog):
                 if balance == 0:
                     continue
                 username = member.name
-                embed.add_field(name=f"{index}. {username}", value=f"{balance} nitro credits", inline=False)
+                embed.add_field(name=f"{index}. {username}", value=f"{balance:g} nitro credits", inline=False)
             embed.set_footer(text=f"Page {page+1}/{total_pages}, timeouts in 60 seconds")
             return embed
         async def update_embed(interaction: discord.Interaction, page):

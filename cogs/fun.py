@@ -1,9 +1,9 @@
-import discord, random, os, time, aiohttp
+import discord, random, os, time
 from discord.ext import commands
 from discord import app_commands
 from gradio_client import Client
 from openai import AsyncOpenAI
-from bot import Bot
+from bot import Bot, Default_Cog
 
 def split_response(response: str, max_length=1900):
     lines = response.splitlines()
@@ -19,14 +19,15 @@ def split_response(response: str, max_length=1900):
         chunks.append(current_chunk.strip())
     return chunks
 
-class FunCog(commands.Cog):
+class FunCog(Default_Cog):
     def __init__(self, bot: Bot):
-        self.bot = bot
-        self.logger = self.bot.cog_logger(self.__class__.__name__)
+        super().__init__(bot)
         self.hf_token = os.environ['HF_TOKEN']
         self.client = AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=os.environ['OR_TOKEN'])
         self.merged = self.dev = self.schnell = None
-        bot.loop.run_in_executor(None, self.load_models)
+    
+    async def cog_load(self):
+        await self.bot.loop.run_in_executor(None, self.load_models)
 
     def load_models(self):
         models = {

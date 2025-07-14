@@ -1,4 +1,4 @@
-import discord, os, aiohttp, dotenv, logging, time
+import discord, os, aiohttp, dotenv, logging, time, inspect
 from aiohttp import web
 from discord import app_commands
 from discord.ext import commands
@@ -12,9 +12,7 @@ if os.name == 'nt' and not os.getenv('WT_SESSION'):
     except ImportError:
         pass
 start_time = time.time()
-logger = logging.getLogger('discord.n01b')
 bot_name = 'noob_bot'
-logger.name = bot_name
 dotenv.load_dotenv()
 script_path = os.path.dirname(__file__)
 TOKEN = os.environ['TOKEN']
@@ -39,6 +37,21 @@ class Bot(commands.Bot):
         self.counter = counter
         self.react = False
 
+    @property
+    def logger(self):
+        """Returns a logger with name like 'bot.cog.func' or {bot_name}.func"""
+        stack = inspect.stack()
+        for frame_info in stack[1:]:
+            func_name = frame_info.function
+            if func_name == 'logger':
+                continue
+            self_obj = frame_info.frame.f_locals.get('self')
+            cls_name = self_obj.__class__.__name__.lower()
+            if self_obj and cls_name != 'bot':
+                return logging.getLogger(f'bot.{cls_name}.{func_name}')
+            return logging.getLogger(f'{bot_name}.{func_name}')
+        return logging.getLogger(bot_name)
+
     async def setup_hook(self):
         self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(7))
         await client.aconnect()
@@ -57,30 +70,25 @@ class Bot(commands.Bot):
         disabled_commands_list = [bot.get_command(command) for command in disabled_commands if (_ := bot.get_command(command)) is not None]
         for command in disabled_commands_list:
             if command:
-                logger.info(f'Disabling command: {command.name}')
+                self.logger.info(f'Disabling command: {command.name}')
                 command.enabled = False
 
     async def close(self):
         await super().close()
         await self.session.close()
-        logger.info('Stopped.')
+        self.logger.info('Stopped.')
         await client.aclose()
-
-    def cog_logger(self, cog_name: str):
-        l = logging.getLogger(f'discord.n01b.{cog_name}')
-        l.name = f'bot.{cog_name}' if not bot_name in cog_name else cog_name
-        return l
 
     async def download_file(self, file: str):
         """Download file content from pCloud and return as text."""
         async with self.session.get(f"{api}/listfolder", params={'path': f'/{folder}', 'auth': PTOKEN}) as response:
             files = await response.json()
             if files["result"] != 0:
-                logger.error(f"Failed to list folder {folder}: {files['result']}, error: {files.get('error', 'Unknown error')}")
+                self.logger.error(f"Failed to list folder {folder}: {files['result']}, error: {files.get('error', 'Unknown error')}")
                 return ''
         file_info = next((f for f in files.get('metadata', {}).get('contents', []) if f['name'] == file), None)
         if not file_info:
-            logger.error(f"File '{file}' not found in folder '{folder}'.")
+            self.logger.error(f"File '{file}' not found in folder '{folder}'.")
             return ''
         async with self.session.get(f"{api}/getfilelink", params={'fileid': file_info['fileid'], 'auth': PTOKEN}) as file_url_response:
             file_url = await file_url_response.json()
@@ -100,7 +108,7 @@ class Bot(commands.Bot):
             content = rtext + text + '\n'
             await self.upload_file(file, content)
         except Exception as e:
-            logger.exception(f'Error logging to {file}')
+            self.logger.exception(f'Error logging to {file}')
 
     async def get_lines(self, num_lines: int, file: str):
         try:
@@ -115,7 +123,7 @@ class Bot(commands.Bot):
             await self.upload_file(file, content)
             return lines_list
         except Exception as e:
-            logger.exception(f'Error getting lines from {file}')
+            self.logger.exception(f'Error getting lines from {file}')
             return None
         
     async def count_lines(self, file: str):
@@ -123,14 +131,14 @@ class Bot(commands.Bot):
             text = await self.download_file(file)
             return len(text.splitlines())
         except Exception as e:
-            logger.exception(f'Error counting lines in {file}')
+            self.logger.exception(f'Error counting lines in {file}')
             return None
     
     async def check_boost(self, guild_id: int, member_id: int):
         try:
             response = await self.session.get(f'https://discord.com/api/v10/guilds/{guild_id}/premium/subscriptions', headers={'authorization': RTOKEN})
             if response.status != 200:
-                logger.error(f'Error getting boost count for guild {guild_id}: {response.status}')
+                self.logger.error(f'Error getting boost count for guild {guild_id}: {response.status}')
                 return False
             response = await response.json()
             if isinstance(response, list):
@@ -141,10 +149,10 @@ class Bot(commands.Bot):
                         boost_count += 1
                 return boost_count
             else:
-                logger.error(f'Error getting boost count for user {member_id}: {response}')
+                self.logger.error(f'Error getting boost count for user {member_id}: {response}')
                 return False
         except Exception as e:
-            logger.error(f'Error checking boost for guild {guild_id}, member {member_id}: {e}')
+            self.logger.error(f'Error checking boost for guild {guild_id}, member {member_id}: {e}')
             return False
         
     async def respond(self, ctx: commands.Context, text: str, delete_after=5, ephemeral=True, del_cmd=True):
@@ -156,15 +164,15 @@ class Bot(commands.Bot):
             if not delete_after: return await ctx.send(text)
             await ctx.send(text, delete_after = delete_after)
 
-bot = Bot()
+class Default_Cog(commands.Cog):
+    def __init__(self, bot: Bot):
+        self.bot = bot
+    
+    @property
+    def logger(self):
+        return self.bot.logger
 
-# # this is cool, but i dont log anything in commands. will be commented out for now
-# @bot.before_invoke
-# async def command_logger(ctx):
-#     if ctx.cog:
-#         ctx.logger = bot.cog_logger(f'{ctx.cog.qualified_name}.{ctx.command.name}')
-#     else:
-#         ctx.logger = bot.cog_logger(f'{bot_name}.{ctx.command.name}')
+bot = Bot()
 
 descripts = {'type': 'The type of thing to toggle.', 'name': 'The name of the thing to toggle.'}
 def p(desc, default = None, *args,**kwargs):
@@ -208,13 +216,13 @@ async def on_command_error(ctx: commands.Context, error):
         if ctx.guild is None:
             await ctx.send("You can't use commands in DMs.", ephemeral = True)
     elif isinstance(error, discord.HTTPException) and error.status == 429:
-        logger.warning(f"Rate limited. Retry in {error.response.headers['Retry-After']} seconds.")
+        bot.logger.warning(f"Rate limited. Retry in {error.response.headers['Retry-After']} seconds.")
     elif isinstance(error, discord.HTTPException) and error.status == 400:
-        logger.error(f"Bad request: {error.text}")
+        bot.logger.error(f"Bad request: {error.text}")
     elif isinstance(error, commands.CommandOnCooldown):
         await ctx.send(f"This command is on cooldown. Please wait {error.retry_after:.2f}s", ephemeral = True, delete_after = 5)
     elif isinstance(error, app_commands.CommandInvokeError) and isinstance(error.original, discord.NotFound):
-        logger.error(error)
+        bot.logger.error(error)
     else:
         await ctx.send(str(error), ephemeral = True)
 
@@ -232,6 +240,7 @@ async def on_message(message: discord.Message):
 @bot.hybrid_command(name="hi", help="Says hello")
 async def hi(ctx):
     await ctx.send('Hello!')
+    bot.logger.info('Hello!')
 
 @bot.hybrid_command(name="ping", help="Sends bot's latency.")
 async def ping(ctx):
@@ -345,9 +354,13 @@ async def on_ready():
     try:
         await web.TCPSite(runner, host, port).start()
     except OSError:
-        logger.error(f'Port {port} is already in use')
+        bot.logger.error(f'Port {port} is already in use')
     await bot.change_presence(activity=discord.CustomActivity(name='im cool 😎, ">" prefix'))
-    logger.info(f'Logged in as {bot.user}, in {time.time()-start_time:.2f}s, ping: {round(bot.latency * 1000)}ms')
+    bot.logger.info(f'Logged in as {bot.user}, in {time.time()-start_time:.2f}s, ping: {round(bot.latency * 1000)}ms')
 
 if __name__ == "__main__":
-    bot.run(TOKEN)
+    discord.utils.setup_logging()
+    warn_log_packages = ['httpx']
+    for package in warn_log_packages:
+        logging.getLogger(package).setLevel(logging.WARNING)
+    bot.run(TOKEN, log_handler=None)

@@ -3,7 +3,7 @@ from bs4 import BeautifulSoup
 from discord import app_commands
 from discord.ext import commands, tasks
 from datetime import datetime as dt, timezone
-from bot import Bot
+from bot import Bot, Default_Cog
 
 desc1, desc2 = "How many codes", "Where to send"
 def p(desc, default = None):
@@ -50,10 +50,9 @@ def get_active_promo(scraper: cloudscraper.CloudScraper):
                 return True
     return False
 
-class NitroCog(commands.Cog):
+class NitroCog(Default_Cog):
     def __init__(self, bot: Bot):
-        self.bot = bot
-        self.logger = bot.cog_logger(self.__class__.__name__)
+        super().__init__(bot)
         self.nitro_usage = bot.db['nitro_usage']
         self.eco = bot.db['economy']
         self.embed_settings = bot.db['embed_settings']
@@ -109,7 +108,7 @@ class NitroCog(commands.Cog):
             if lines is None:
                 return await ctx.send("There was an error checking the code stock.")
             if lines == 0:
-                await self.bot.respond(ctx, "No nitro codes left.", 10)
+                return await self.bot.respond(ctx, "No nitro codes left.", 10)
             if amount == 0:
                 return await ctx.send(f"There are {lines} codes available.")
             await ctx.defer()
@@ -124,7 +123,7 @@ class NitroCog(commands.Cog):
                     if not user:
                         return await ctx.send("You are not in database. (no nitro credits)")
                     if user['balance'] < amount:
-                        return await ctx.send(f"You don't have enough nitro credits. {user['balance']}/{amount}.")
+                        return await ctx.send(f"You don't have enough nitro credits. {user['balance']:g}/{amount}.")
                     await self.eco.update_one({'_id': user_id}, {'$inc': {'balance': -amount}})
                 else:
                     # old nitro system
@@ -206,7 +205,7 @@ class NitroCog(commands.Cog):
                 else:
                     await ctx.send(code)
         except Exception as e:
-            self.logger.exception("Error in nitro command")
+            self.logger.exception(f'Nitro error: {e}')
             await ctx.send("An error occurred while processing your request.")
 
     @nitro.error
@@ -303,11 +302,12 @@ class NitroCog(commands.Cog):
                 channel = self.bot.get_channel(channel_id)
                 if channel and isinstance(channel, discord.TextChannel):
                     if self.nitro_toggle:
-                        nitro_count = await self.bot.count_lines('nitro.txt')
-                        if nitro_count is None:
-                            nitro_count = "Error"
-                    elif not self.active_promo:
-                        nitro_count = "No promo"
+                        if not self.active_promo:
+                            nitro_count = "No promo"
+                        else:
+                            nitro_count = await self.bot.count_lines('nitro.txt')
+                            if nitro_count is None:
+                                nitro_count = "Error"
                     else:
                         nitro_count = "Disabled"
                     embed = discord.Embed(title="Bot Status", description="Online 24/7, hosted somewhere...", color=discord.Color.random(), timestamp = datetime.datetime.now())
