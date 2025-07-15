@@ -295,25 +295,24 @@ class NitroCog(Default_Cog):
     async def update_embed(self):
         await self.bot.wait_until_ready()
         try:
+            if self.nitro_toggle:
+                if self.active_promo:
+                    nitro_count = await self.bot.count_lines('nitro.txt')
+                    if nitro_count is None: nitro_count = "Error"
+                else: nitro_count = "No promo"
+            else: nitro_count = "Disabled"
+            ping = round(self.bot.latency * 1000)
+            guild_count, user_count = len(self.bot.guilds), len(self.bot.users)
             for setting in self.embed_var:
                 guild_id = setting['guild_id']
                 channel_id = setting['channel_id']
                 message_id = setting['message_id']
                 channel = self.bot.get_channel(channel_id)
                 if channel and isinstance(channel, discord.TextChannel):
-                    if self.nitro_toggle:
-                        if not self.active_promo:
-                            nitro_count = "No promo"
-                        else:
-                            nitro_count = await self.bot.count_lines('nitro.txt')
-                            if nitro_count is None:
-                                nitro_count = "Error"
-                    else:
-                        nitro_count = "Disabled"
                     embed = discord.Embed(title="Bot Status", description="Online 24/7, hosted somewhere...", color=discord.Color.random(), timestamp = datetime.datetime.now())
-                    embed.add_field(name="Servers", value=f"{len(self.bot.guilds)}")
-                    embed.add_field(name="Users", value=f"{len(self.bot.users)}")
-                    embed.add_field(name="Ping", value=f"{round (self.bot.latency * 1000)} ms")
+                    embed.add_field(name="Servers", value=f"{guild_count}")
+                    embed.add_field(name="Users", value=f"{user_count}")
+                    embed.add_field(name="Ping", value=f"{ping} ms")
                     embed.add_field(name="Nitro stock", value=f"{nitro_count}")
                     embed.add_field(name="Nitro given", value=f"{self.nitro_counter}")
                     embed.set_footer(text="coded by n01b")
@@ -327,7 +326,7 @@ class NitroCog(Default_Cog):
             await self.embed_settings.delete_one({'guild_id': guild_id})
             self.embed_var.remove(setting)
         except Exception as e:
-            self.logger.exception("Failed to update embed")
+            self.logger.exception(f"Failed to update embed: {e}")
 
     @commands.command(name="embe", help="Enable embed updates in the current channel.")
     @commands.is_owner()
