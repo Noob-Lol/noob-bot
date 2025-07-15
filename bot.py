@@ -171,6 +171,17 @@ class Bot(commands.Bot):
 class Default_Cog(commands.Cog):
     def __init__(self, bot: Bot):
         self.bot = bot
+        self._ready = False
+
+    async def cog_on_ready(self):
+        """Called when the cog is loaded. Custom function."""
+        pass
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        if self._ready: return
+        self._ready = True
+        await self.cog_on_ready()
     
     @property
     def logger(self):

@@ -76,6 +76,8 @@ class NitroCog(Default_Cog):
             self.logger.warning("Nitro commands are disabled.")
         elif not self.new_nitro_system:
             self.logger.warning("Using old nitro system.")
+
+    async def cog_on_ready(self):
         self.update_embed.start()
 
     @commands.hybrid_command(name="nitro", help="Sends a free nitro link")
@@ -293,7 +295,6 @@ class NitroCog(Default_Cog):
 
     @tasks.loop(minutes=5)
     async def update_embed(self):
-        await self.bot.wait_until_ready()
         try:
             if self.nitro_toggle:
                 if self.active_promo:
