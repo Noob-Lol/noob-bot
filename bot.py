@@ -1,4 +1,4 @@
-import discord, os, aiohttp, dotenv, logging, time, inspect
+import discord, os, aiohttp, dotenv, logging, time, inspect, asyncio
 from aiohttp import web
 from discord import app_commands
 from discord.ext import commands
@@ -36,10 +36,11 @@ class Bot(commands.Bot):
         self.db = db
         self.counter = counter
         self.react = False
+        self.file_lock = asyncio.Lock()
 
     @property
     def logger(self):
-        """Returns a logger with name like 'bot.cog.func' or {bot_name}.func"""
+        """Logs things with logger name like 'bot.cog.func' or {bot_name}.func"""
         stack = inspect.stack()
         for frame_info in stack[1:]:
             func_name = frame_info.function
@@ -79,16 +80,16 @@ class Bot(commands.Bot):
         self.logger.info('Stopped.')
         await client.aclose()
 
-    async def download_file(self, file: str):
-        """Download file content from pCloud and return as text."""
+    async def download_file(self, file: str, blank_ok = False):
+        """Download file content from pCloud and return as text. blank_ok=True will not raise an exception if the file is not found."""
         async with self.session.get(f"{api}/listfolder", params={'path': f'/{folder}', 'auth': PTOKEN}) as response:
             files = await response.json()
             if files["result"] != 0:
-                self.logger.error(f"Failed to list folder {folder}: {files['result']}, error: {files.get('error', 'Unknown error')}")
-                return ''
+                raise Exception(f"Failed to list folder {folder}: {files['result']}, error: {files.get('error', 'Unknown error')}")
         file_info = next((f for f in files.get('metadata', {}).get('contents', []) if f['name'] == file), None)
         if not file_info:
-            self.logger.error(f"File '{file}' not found in folder '{folder}'.")
+            if not blank_ok: raise Exception(f"File '{file}' not found in folder '{folder}'.")
+            self.logger.warning(f"File '{file}' not found in folder '{folder}', it will be created.")
             return ''
         async with self.session.get(f"{api}/getfilelink", params={'fileid': file_info['fileid'], 'auth': PTOKEN}) as file_url_response:
             file_url = await file_url_response.json()
@@ -104,34 +105,37 @@ class Bot(commands.Bot):
 
     async def log_to_file(self, text: str, file: str):
         try:
-            rtext = await self.download_file(file)
-            content = rtext + text + '\n'
-            await self.upload_file(file, content)
+            async with self.file_lock:
+                rtext = await self.download_file(file, True)
+                content = rtext + text + '\n'
+                await self.upload_file(file, content)
         except Exception as e:
-            self.logger.exception(f'Error logging to {file}')
+            self.logger.exception(f'Error for {file}: {e}')
 
     async def get_lines(self, num_lines: int, file: str):
         try:
-            text = await self.download_file(file)
-            lines = text.splitlines()
-            if not lines:
-                return None
-            if num_lines > len(lines):
-                num_lines = len(lines)
-            lines_list = lines[:num_lines]
-            content = "\n".join(lines[num_lines:])
-            await self.upload_file(file, content)
-            return lines_list
+            async with self.file_lock:
+                text = await self.download_file(file)
+                lines = text.splitlines()
+                if not lines:
+                    return None
+                if num_lines > len(lines):
+                    num_lines = len(lines)
+                lines_list = lines[:num_lines]
+                content = "\n".join(lines[num_lines:])
+                await self.upload_file(file, content)
+                return lines_list
         except Exception as e:
-            self.logger.exception(f'Error getting lines from {file}')
+            self.logger.exception(f'Error for {file}: {e}')
             return None
         
     async def count_lines(self, file: str):
         try:
-            text = await self.download_file(file)
-            return len(text.splitlines())
+            async with self.file_lock:
+                text = await self.download_file(file)
+                return len(text.splitlines())
         except Exception as e:
-            self.logger.exception(f'Error counting lines in {file}')
+            self.logger.exception(f'Error for {file}: {e}')
             return None
     
     async def check_boost(self, guild_id: int, member_id: int):
@@ -170,6 +174,7 @@ class Default_Cog(commands.Cog):
     
     @property
     def logger(self):
+        """The custom logger for cogs."""
         return self.bot.logger
 
 bot = Bot()
