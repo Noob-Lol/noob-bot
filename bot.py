@@ -1,4 +1,4 @@
-import discord, os, aiohttp, dotenv, logging, time, inspect, asyncio
+import discord, os, aiohttp, dotenv, logging, time, inspect, asyncio, aiofiles
 from aiohttp import web
 from discord import app_commands
 from discord.ext import commands
@@ -16,8 +16,9 @@ bot_name = 'noob_bot'
 dotenv.load_dotenv()
 script_path = os.path.dirname(__file__)
 TOKEN = os.environ['TOKEN']
-RTOKEN = os.environ['RTOKEN']
-PTOKEN = os.environ['PTOKEN']
+RTOKEN = os.getenv('RTOKEN')
+PTOKEN = os.getenv('PTOKEN')
+LOCAL_STORAGE = True if os.getenv('LOCAL_STORAGE') == 'True' else False
 folder = 'DiscordBotData'
 api = 'https://eapi.pcloud.com'
 uri = os.environ['MONGODB_URI']
@@ -55,7 +56,8 @@ class Bot(commands.Bot):
 
     async def setup_hook(self):
         self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(7))
-        await client.aconnect()
+        try: await client.admin.command('ping')
+        except Exception as e: raise Exception(f'Failed to connect to MongoDB: {e}')
         global unloaded_cogs, disabled_channels, disabled_commands
         unloaded_cogs = {cog['cog'] async for cog in unloaded_coll.find()}
         disabled_channels = {channel['_id'] async for channel in disabled_coll.find()}
@@ -82,6 +84,10 @@ class Bot(commands.Bot):
 
     async def download_file(self, file: str, blank_ok = False):
         """Download file content from pCloud and return as text. blank_ok=True will not raise an exception if the file is not found."""
+        if LOCAL_STORAGE:
+            async with aiofiles.open(f'{script_path}/{file}', 'r') as f:
+                return await f.read()
+        if not PTOKEN: raise Exception('PTOKEN not found.')
         async with self.session.get(f"{api}/listfolder", params={'path': f'/{folder}', 'auth': PTOKEN}) as response:
             files = await response.json()
             if files["result"] != 0:
@@ -98,7 +104,12 @@ class Bot(commands.Bot):
             return await file_response.text()
 
     async def upload_file(self, file: str, content: str):
-        """Upload content to a file in pCloud."""
+        """Upload content to a file in pCloud. Or write to file."""
+        if LOCAL_STORAGE:
+            async with aiofiles.open(f'{script_path}/{file}', 'w') as f:
+                await f.write(content)
+            return
+        if not PTOKEN: raise Exception('PTOKEN not found.')
         data = aiohttp.FormData()
         data.add_field('filename', content, filename=file)
         await self.session.post(f"{api}/uploadfile", data=data, params={'path': f'/{folder}', 'auth': PTOKEN})
@@ -140,6 +151,7 @@ class Bot(commands.Bot):
     
     async def check_boost(self, guild_id: int, member_id: int):
         try:
+            if not RTOKEN: raise Exception('RTOKEN not found.')
             response = await self.session.get(f'https://discord.com/api/v10/guilds/{guild_id}/premium/subscriptions', headers={'authorization': RTOKEN})
             if response.status != 200:
                 self.logger.error(f'Error getting boost count for guild {guild_id}: {response.status}')
@@ -374,8 +386,8 @@ async def on_ready():
     bot.logger.info(f'Logged in as {bot.user}, in {time.time()-start_time:.2f}s, ping: {round(bot.latency * 1000)}ms')
 
 if __name__ == "__main__":
-    discord.utils.setup_logging()
-    warn_log_packages = ['httpx', 'aiohttp']
-    for package in warn_log_packages:
-        logging.getLogger(package).setLevel(logging.WARNING)
-    bot.run(TOKEN, log_handler=None)
+    logging.getLogger('discord').setLevel(logging.INFO)
+    my_loggers = [bot_name, 'bot']
+    for logger in my_loggers:
+        logging.getLogger(logger).setLevel(logging.INFO)
+    bot.run(TOKEN, log_level=logging.WARNING, root_logger=True)
