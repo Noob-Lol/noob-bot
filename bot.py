@@ -85,6 +85,9 @@ class Bot(commands.Bot):
     async def download_file(self, file: str, blank_ok = False):
         """Download file content from pCloud and return as text. blank_ok=True will not raise an exception if the file is not found."""
         if LOCAL_STORAGE:
+            if not os.path.exists(f'{script_path}/{file}'):
+                if not blank_ok: raise Exception("Not found in local storage.")
+                else: return ''
             async with aiofiles.open(f'{script_path}/{file}', 'r') as f:
                 return await f.read()
         if not PTOKEN: raise Exception('PTOKEN not found.')
@@ -94,7 +97,7 @@ class Bot(commands.Bot):
                 raise Exception(f"Failed to list folder {folder}: {files['result']}, error: {files.get('error', 'Unknown error')}")
         file_info = next((f for f in files.get('metadata', {}).get('contents', []) if f['name'] == file), None)
         if not file_info:
-            if not blank_ok: raise Exception(f"File '{file}' not found in folder '{folder}'.")
+            if not blank_ok: raise Exception(f"Not found in folder '{folder}'.")
             self.logger.warning(f"File '{file}' not found in folder '{folder}', it will be created.")
             return ''
         async with self.session.get(f"{api}/getfilelink", params={'fileid': file_info['fileid'], 'auth': PTOKEN}) as file_url_response:
@@ -112,7 +115,10 @@ class Bot(commands.Bot):
         if not PTOKEN: raise Exception('PTOKEN not found.')
         data = aiohttp.FormData()
         data.add_field('filename', content, filename=file)
-        await self.session.post(f"{api}/uploadfile", data=data, params={'path': f'/{folder}', 'auth': PTOKEN})
+        r = await self.session.post(f"{api}/uploadfile", data=data, params={'path': f'/{folder}', 'auth': PTOKEN})
+        r_json = await r.json()
+        if r_json["result"] != 0:
+            raise Exception(f"Failed to upload to {folder}: {r_json['result']}, error: {r_json.get('error', 'Unknown error')}")
 
     async def log_to_file(self, text: str, file: str):
         try:
@@ -128,8 +134,7 @@ class Bot(commands.Bot):
             async with self.file_lock:
                 text = await self.download_file(file)
                 lines = text.splitlines()
-                if not lines:
-                    return None
+                if not lines: return None
                 if num_lines > len(lines):
                     num_lines = len(lines)
                 lines_list = lines[:num_lines]
@@ -138,7 +143,6 @@ class Bot(commands.Bot):
                 return lines_list
         except Exception as e:
             self.logger.exception(f'Error for {file}: {e}')
-            return None
         
     async def count_lines(self, file: str):
         try:
@@ -147,7 +151,6 @@ class Bot(commands.Bot):
                 return len(text.splitlines())
         except Exception as e:
             self.logger.exception(f'Error for {file}: {e}')
-            return None
     
     async def check_boost(self, guild_id: int, member_id: int):
         try:

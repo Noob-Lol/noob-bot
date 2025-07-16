@@ -8,47 +8,11 @@ from bot import Bot, Default_Cog
 desc1, desc2 = "How many codes", "Where to send"
 def p(desc, default = None):
     return commands.parameter(description=desc, default=default)
-no_active_promo_str = "There is no active nitro promo."
+no_active_promo_str = "There is no active nitro promotion. Check yourself: [Support page](<https://support.discord.com/hc/en-us/sections/22113084771863-Promotions>)"
 
 tz_map = {abbr: "US/Pacific" for abbr in ("PT", "PST", "PDT")}
 tz_map.update({abbr: "US/Eastern" for abbr in ("ET", "EST", "EDT")})
 tz_map.update({"UTC": "UTC", "GMT": "GMT"})
-
-def parse_date(text: str):
-    match = re.search(r'([A-Za-z]+\s+\d{1,2},\s+\d{4})\s+\((\d{1,2}:\d{2}[APMapm]{2})\s*([A-Z]{2,4})\)', text)
-    if not match:
-        raise ValueError(f"Unparsable datetime: {text}")
-    date_part, time_part, tz_abbr = match.groups()
-    tz = tz_map.get(tz_abbr.upper())
-    if not tz:
-        raise ValueError(f"Unknown timezone: {tz_abbr}")
-    dt_obj = dt.strptime(f"{date_part} {time_part.upper()}", "%B %d, %Y %I:%M%p")
-    return pytz.timezone(tz).localize(dt_obj).astimezone(timezone.utc)
-
-def get_active_promo(scraper: cloudscraper.CloudScraper):
-    """Tries to find some active nitro promotion. Returns True on success."""
-    base = 'https://support.discord.com'
-    html = scraper.get(f'{base}/hc/en-us/sections/22113084771863-Promotions').text
-    soup = BeautifulSoup(html, 'html.parser')
-    exclusions = {'customers', 'youtube', 'game pass ultimate'}
-    for a in soup.select('ul.article-list a.article-list-link'):
-        name, href = a.get_text(strip=True), str(a['href'])
-        html = scraper.get(base + href).text
-        if 'Nitro promotion is free' in html and not any(ex in name.lower() for ex in exclusions):
-            soup = BeautifulSoup(html, 'html.parser')
-            strongs = soup.select('div.article-body p strong')
-            if len(strongs) < 2:
-                continue
-            try:
-                start_date = parse_date(strongs[0].get_text(strip=True))
-                end_date = parse_date(strongs[1].get_text(strip=True))
-            except ValueError:
-                continue
-            now = dt.now(timezone.utc)
-            is_active = start_date <= now <= end_date
-            if is_active:
-                return True
-    return False
 
 class NitroCog(Default_Cog):
     def __init__(self, bot: Bot):
@@ -79,6 +43,42 @@ class NitroCog(Default_Cog):
 
     async def cog_on_ready(self):
         self.update_embed.start()
+
+    def parse_date(self, text: str):
+        match = re.search(r'([A-Za-z]+\s+\d{1,2},\s+\d{4})\s+\((\d{1,2}:\d{2}[APMapm]{2})\s*([A-Z]{2,4})\)', text)
+        if not match:
+            raise ValueError(f"Unparsable datetime: {text}")
+        date_part, time_part, tz_abbr = match.groups()
+        tz = tz_map.get(tz_abbr.upper())
+        if not tz:
+            raise ValueError(f"Unknown timezone: {tz_abbr}")
+        dt_obj = dt.strptime(f"{date_part} {time_part.upper()}", "%B %d, %Y %I:%M%p")
+        return pytz.timezone(tz).localize(dt_obj).astimezone(timezone.utc)
+
+    def get_active_promo(self, scraper: cloudscraper.CloudScraper):
+        """Tries to find some active nitro promotion. Returns True on success."""
+        base = 'https://support.discord.com'
+        html = scraper.get(f'{base}/hc/en-us/sections/22113084771863-Promotions').text
+        soup = BeautifulSoup(html, 'html.parser')
+        exclusions = {'customers', 'youtube', 'game pass ultimate'}
+        for a in soup.select('ul.article-list a.article-list-link'):
+            name, href = a.get_text(strip=True), str(a['href'])
+            html = scraper.get(base + href).text
+            if 'Nitro promotion is free' in html and not any(ex in name.lower() for ex in exclusions):
+                soup = BeautifulSoup(html, 'html.parser')
+                strongs = soup.select('div.article-body p strong')
+                if len(strongs) < 2:
+                    continue
+                try:
+                    start_date = self.parse_date(strongs[0].get_text(strip=True))
+                    end_date = self.parse_date(strongs[1].get_text(strip=True))
+                except ValueError:
+                    continue
+                now = dt.now(timezone.utc)
+                is_active = start_date <= now <= end_date
+                if is_active:
+                    return {'name': name, 'url': href, 'time_left': end_date - now}
+        return False
 
     @commands.hybrid_command(name="nitro", help="Sends a free nitro link")
     @commands.cooldown(1, 5, commands.BucketType.user)
@@ -288,10 +288,17 @@ class NitroCog(Default_Cog):
     @tasks.loop(hours=2)
     async def check_promos(self):
         try:
-            self.active_promo = await self.bot.loop.run_in_executor(None, get_active_promo, self.scraper)
+            self.active_promo = await self.bot.loop.run_in_executor(None, self.get_active_promo, self.scraper)
             # self.logger.info(f"Checked promos. Active: {self.active_promo}")
         except Exception as e:
-            self.logger.exception("Failed to check promos")
+            self.logger.exception(f"Failed to check promos: {e}")
+
+    @commands.hybrid_command(name="promos", help="Check active nitro promos.")
+    async def promos(self, ctx):
+        if not self.nitro_toggle: return await self.bot.respond(ctx, "Nitro commands are disabled.")
+        if not self.active_promo: return await self.bot.respond(ctx, no_active_promo_str)
+        if not isinstance(self.active_promo, dict): return await self.bot.respond(ctx, "active_promo is not a dict.")
+        await ctx.send(f"**Found an Active Free Nitro Promo!**\nName: {self.active_promo['name']}\nLink: {self.active_promo['url']}\nTime left: {self.active_promo['time_left']}")
 
     @tasks.loop(minutes=5)
     async def update_embed(self):
