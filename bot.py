@@ -3,6 +3,7 @@ from aiohttp import web
 from discord import app_commands
 from discord.ext import commands
 from pymongo import AsyncMongoClient
+from pcloud_api import PyCloudAsync
 if os.name == 'nt' and not os.getenv('WT_SESSION'):
     try:
         # this fixes logger colors on windows
@@ -20,7 +21,7 @@ RTOKEN = os.getenv('RTOKEN')
 PTOKEN = os.getenv('PTOKEN')
 LOCAL_STORAGE = True if os.getenv('LOCAL_STORAGE') == 'True' else False
 folder = 'DiscordBotData'
-api = 'https://eapi.pcloud.com'
+pcloud = PyCloudAsync(PTOKEN, 'eapi')
 uri = os.environ['MONGODB_URI']
 client = AsyncMongoClient(uri)
 db = client['discord_bot']
@@ -55,6 +56,7 @@ class Bot(commands.Bot):
         return logging.getLogger(bot_name)
 
     async def setup_hook(self):
+        await pcloud.connect()
         self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(7))
         try: await client.admin.command('ping')
         except Exception as e: raise Exception(f'Failed to connect to MongoDB: {e}')
@@ -79,6 +81,7 @@ class Bot(commands.Bot):
     async def close(self):
         await super().close()
         await self.session.close()
+        await pcloud.disconnect()
         self.logger.info('Stopped.')
         await client.aclose()
 
@@ -86,23 +89,14 @@ class Bot(commands.Bot):
         """Download file content from pCloud and return as text. blank_ok=True will not raise an exception if the file is not found."""
         if LOCAL_STORAGE:
             if not os.path.exists(f'{script_path}/{file}'):
-                if not blank_ok: raise Exception("Not found in local storage.")
-                else: return ''
+                if blank_ok: return ''
+                else: raise Exception(f"Not found in local storage.")
             async with aiofiles.open(f'{script_path}/{file}', 'r') as f:
                 return await f.read()
-        if not PTOKEN: raise Exception('PTOKEN not found.')
-        async with self.session.get(f"{api}/listfolder", params={'path': f'/{folder}', 'auth': PTOKEN}) as response:
-            files = await response.json()
-            if files["result"] != 0:
-                raise Exception(f"Failed to list folder {folder}: {files['result']}, error: {files.get('error', 'Unknown error')}")
-        file_info = next((f for f in files.get('metadata', {}).get('contents', []) if f['name'] == file), None)
-        if not file_info:
-            if not blank_ok: raise Exception(f"Not found in folder '{folder}'.")
-            self.logger.warning(f"File '{file}' not found in folder '{folder}', it will be created.")
-            return ''
-        async with self.session.get(f"{api}/getfilelink", params={'fileid': file_info['fileid'], 'auth': PTOKEN}) as file_url_response:
-            file_url = await file_url_response.json()
-        download_url = file_url['hosts'][0] + file_url['path']
+        download_url = await pcloud.get_file(file, folder)
+        if download_url is None:
+            if blank_ok: return ''
+            else: raise Exception(f"Not found in folder '{folder}'.")
         async with self.session.get(f'https://{download_url}') as file_response:
             return await file_response.text()
 
@@ -112,13 +106,7 @@ class Bot(commands.Bot):
             async with aiofiles.open(f'{script_path}/{file}', 'w') as f:
                 await f.write(content)
             return
-        if not PTOKEN: raise Exception('PTOKEN not found.')
-        data = aiohttp.FormData()
-        data.add_field('filename', content, filename=file)
-        r = await self.session.post(f"{api}/uploadfile", data=data, params={'path': f'/{folder}', 'auth': PTOKEN})
-        r_json = await r.json()
-        if r_json["result"] != 0:
-            raise Exception(f"Failed to upload to {folder}: {r_json['result']}, error: {r_json.get('error', 'Unknown error')}")
+        await pcloud.uploadfile(file, content, folder)
 
     async def log_to_file(self, text: str, file: str):
         try:
