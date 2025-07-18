@@ -3,7 +3,7 @@ from aiohttp import web
 from discord import app_commands
 from discord.ext import commands
 from pymongo import AsyncMongoClient
-from pcloud_api import PyCloudAsync
+from async_pcloud import PyCloudAsync
 if os.name == 'nt' and not os.getenv('WT_SESSION'):
     try:
         # this fixes logger colors on windows
@@ -241,6 +241,10 @@ async def on_command_error(ctx: commands.Context, error):
     elif isinstance(error, commands.CommandOnCooldown):
         await ctx.send(f"This command is on cooldown. Please wait {error.retry_after:.2f}s", ephemeral = True, delete_after = 5)
     elif isinstance(error, app_commands.CommandInvokeError) and isinstance(error.original, discord.NotFound):
+        bot.logger.error(error)
+    elif isinstance(error, discord.NotFound):
+        bot.logger.error(error)
+    elif isinstance(error, discord.Forbidden):
         bot.logger.error(error)
     else:
         await ctx.send(str(error), ephemeral = True)

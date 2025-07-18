@@ -7,3 +7,4 @@ aiofiles
 cloudscraper
 pytz
 beautifulsoup4
+git+https://${ASYNC_PCLOUD_TOKEN}@github.com/Noob-Lol/async_pcloud.git
