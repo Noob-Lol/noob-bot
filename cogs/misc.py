@@ -83,5 +83,11 @@ class MiscCog(Default_Cog):
             embed.add_field(name=forecast['date'], value=f"{forecast['day']['maxtemp_c']} ~ {forecast['day']['mintemp_c']}℃, rain chance: {forecast['day']['daily_chance_of_rain']}", inline=False)
         await ctx.send(embed=embed)
 
+    @commands.hybrid_command(name="log", help="Logs a message to the log file")
+    @commands.is_owner()
+    async def log_text(self, ctx, *, text: str):
+        await self.bot.log_to_file(text, "test_log.txt")
+        await self.bot.respond(ctx, "Message logged")
+
 async def setup(bot: Bot):
     await bot.add_cog(MiscCog(bot))

@@ -21,7 +21,7 @@ RTOKEN = os.getenv('RTOKEN')
 PTOKEN = os.getenv('PTOKEN')
 LOCAL_STORAGE = True if os.getenv('LOCAL_STORAGE') == 'True' else False
 folder = 'DiscordBotData'
-pcloud = PyCloudAsync(PTOKEN, 'eapi')
+pcloud = PyCloudAsync(PTOKEN)
 uri = os.environ['MONGODB_URI']
 client = AsyncMongoClient(uri)
 db = client['discord_bot']
@@ -85,28 +85,27 @@ class Bot(commands.Bot):
         self.logger.info('Stopped.')
         await client.aclose()
 
-    async def download_file(self, file: str, blank_ok = False):
-        """Download file content from pCloud and return as text. blank_ok=True will not raise an exception if the file is not found."""
+    async def download_file(self, file: str, not_found_ok = False):
+        """Download file content from pCloud and return as text. not_found_ok=True will not raise an exception if the file is not found."""
         if LOCAL_STORAGE:
             if not os.path.exists(f'{script_path}/{file}'):
-                if blank_ok: return ''
-                else: raise Exception(f"Not found in local storage.")
+                if not_found_ok: return ''
+                raise Exception(f"Not found in local storage.")
             async with aiofiles.open(f'{script_path}/{file}', 'r') as f:
                 return await f.read()
-        download_url = await pcloud.get_file(file, folder)
-        if download_url is None:
-            if blank_ok: return ''
-            else: raise Exception(f"Not found in folder '{folder}'.")
-        async with self.session.get(f'https://{download_url}') as file_response:
-            return await file_response.text()
+        file_bytes = await pcloud.download_file(path=f'{folder}/{file}', not_found_ok=not_found_ok)
+        if file_bytes is None:
+            if not_found_ok: return ''
+            raise Exception(f"Not found in folder '{folder}'.")
+        return file_bytes.decode('utf-8')
 
-    async def upload_file(self, file: str, content: str):
+    async def upload_file(self, filename: str, content: str):
         """Upload content to a file in pCloud. Or write to file."""
         if LOCAL_STORAGE:
-            async with aiofiles.open(f'{script_path}/{file}', 'w') as f:
+            async with aiofiles.open(f'{script_path}/{filename}', 'w') as f:
                 await f.write(content)
             return
-        await pcloud.uploadfile(file, content, folder)
+        await pcloud.upload_one_file(filename, content, path=folder)
 
     async def log_to_file(self, text: str, file: str):
         try:
