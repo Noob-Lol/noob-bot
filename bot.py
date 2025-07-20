@@ -57,7 +57,7 @@ class Bot(commands.Bot):
 
     async def setup_hook(self):
         await pcloud.connect()
-        self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(7))
+        self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(7), raise_for_status=True)
         try: await client.admin.command('ping')
         except Exception as e: raise Exception(f'Failed to connect to MongoDB: {e}')
         global unloaded_cogs, disabled_channels, disabled_commands
