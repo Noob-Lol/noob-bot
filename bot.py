@@ -3,7 +3,7 @@ from aiohttp import web
 from discord import app_commands
 from discord.ext import commands
 from pymongo import AsyncMongoClient
-from async_pcloud import PyCloudAsync
+from async_pcloud import AsyncPyCloud
 if os.name == 'nt' and not os.getenv('WT_SESSION'):
     try:
         # this fixes logger colors on windows
@@ -21,7 +21,7 @@ RTOKEN = os.getenv('RTOKEN')
 PTOKEN = os.getenv('PTOKEN')
 LOCAL_STORAGE = True if os.getenv('LOCAL_STORAGE') == 'True' else False
 folder = 'DiscordBotData'
-pcloud = PyCloudAsync(PTOKEN)
+pcloud = AsyncPyCloud(PTOKEN, folder=folder)
 uri = os.environ['MONGODB_URI']
 client = AsyncMongoClient(uri)
 db = client['discord_bot']
@@ -93,11 +93,11 @@ class Bot(commands.Bot):
                 raise Exception(f"Not found in local storage.")
             async with aiofiles.open(f'{script_path}/{file}', 'r') as f:
                 return await f.read()
-        file_bytes = await pcloud.download_file(path=f'{folder}/{file}', not_found_ok=not_found_ok)
-        if file_bytes is None:
+        file_text = await pcloud.gettextfile(not_found_ok, path=file)
+        if file_text is None:
             if not_found_ok: return ''
             raise Exception(f"Not found in folder '{folder}'.")
-        return file_bytes.decode('utf-8')
+        return file_text
 
     async def upload_file(self, filename: str, content: str):
         """Upload content to a file in pCloud. Or write to file."""
@@ -105,7 +105,8 @@ class Bot(commands.Bot):
             async with aiofiles.open(f'{script_path}/{filename}', 'w') as f:
                 await f.write(content)
             return
-        await pcloud.upload_one_file(filename, content, path=folder)
+        r = await pcloud.upload_one_file(filename, content, path='/')
+        if r.get('error'): raise Exception(r['error'])
 
     async def log_to_file(self, text: str, file: str):
         try:
@@ -121,7 +122,7 @@ class Bot(commands.Bot):
             async with self.file_lock:
                 text = await self.download_file(file)
                 lines = text.splitlines()
-                if not lines: return None
+                if not lines: return
                 if num_lines > len(lines):
                     num_lines = len(lines)
                 lines_list = lines[:num_lines]
