@@ -1,9 +1,15 @@
-import discord, random, os, time
-from discord.ext import commands
-from discord import app_commands
+import os
+import random
+import time
+
+from bot import Bot, Default_Cog
 from gradio_client import Client
 from openai import AsyncOpenAI
-from bot import Bot, Default_Cog
+
+import discord
+from discord import app_commands
+from discord.ext import commands
+
 
 def split_response(response: str, max_length=1900):
     lines = response.splitlines()
@@ -19,21 +25,22 @@ def split_response(response: str, max_length=1900):
         chunks.append(current_chunk.strip())
     return chunks
 
+
 class FunCog(Default_Cog):
     def __init__(self, bot: Bot):
         super().__init__(bot)
         self.hf_token = os.environ['HF_TOKEN']
         self.client = AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=os.environ['OR_TOKEN'])
         self.merged = self.dev = self.schnell = None
-    
+
     async def cog_load(self):
         await self.bot.loop.run_in_executor(None, self.load_models)
 
     def load_models(self):
         models = {
-        "multimodalart/FLUX.1-merged": "merged",
-        "black-forest-labs/FLUX.1-dev": "dev",
-        "black-forest-labs/FLUX.1-schnell": "schnell"
+            "multimodalart/FLUX.1-merged": "merged",
+            "black-forest-labs/FLUX.1-dev": "dev",
+            "black-forest-labs/FLUX.1-schnell": "schnell"
         }
         for model, name in models.items():
             self.bot.loop.run_in_executor(None, self.load_one, model, name)
@@ -58,7 +65,7 @@ class FunCog(Default_Cog):
         await ctx.send(f"**{ctx.author.name}** flipped a coin and it landed on **{random.choice(choices)}**")
 
     @commands.hybrid_command(name="random", help="Sends a random number")
-    async def random(self, ctx, min: int|None, max: int|None):
+    async def random(self, ctx, min: int | None, max: int | None):
         if min is None or max is None:
             await ctx.send("Input two numbers", delete_after=3)
         elif min == max:
@@ -70,7 +77,8 @@ class FunCog(Default_Cog):
 
     @commands.hybrid_command(name="joke", help="Sends a random joke")
     async def joke(self, ctx):
-        response = await self.bot.session.get("https://v2.jokeapi.dev/joke/Any?blacklistFlags=nsfw,religious,political,racist,sexist,explicit")
+        flags = 'nsfw,religious,political,racist,sexist,explicit'
+        response = await self.bot.session.get(f"https://v2.jokeapi.dev/joke/Any?blacklistFlags={flags}")
         joke = await response.json()
         if joke["type"] == "single":
             await ctx.send(joke["joke"])
@@ -94,16 +102,16 @@ class FunCog(Default_Cog):
                             "role": "user",
                             "content": [
                                 {
-                                "type": "text",
-                                "text": "You are a helpful Discord bot. Keep your answers short and to the point. Free nitro is real only if its from official Discord promotion."
+                                    "type": "text",
+                                    "text": "You are a helpful Discord bot. Keep your answers short and to the point. Free nitro is real only if its from official Discord promotion."
                                 },
                                 {
-                                "type": "text",
-                                "text": f"{prompt}"
+                                    "type": "text",
+                                    "text": f"{prompt}"
                                 },
                                 ]}])
                 except Exception as e:
-                    self.logger.exception('Error in ai_chat command while creating completion')
+                    self.logger.exception(f'Error in ai_chat command while creating completion: {e}')
                     return await ctx.reply("Something went wrong, please try again later")
                 msg = completion.choices[0].message.content
                 if not msg:
@@ -113,11 +121,11 @@ class FunCog(Default_Cog):
                 for chunk in chunks:
                     await ctx.reply(chunk)
         except Exception as e:
-            self.logger.exception('Error in ai_chat command')
+            self.logger.exception(f'Error in ai_chat command: {e}')
 
     @commands.hybrid_command(name="image", help="Generates an image")
     @commands.cooldown(1, 30, commands.BucketType.user)
-    @app_commands.describe(prompt="A prompt for the image", seed="default=random", width="default=1024", height="default=1024", guidance_scale="default=3.5, not used by schnell",steps="default=4", model="default=schnell")
+    @app_commands.describe(prompt="A prompt for the image", seed="default=random", width="default=1024", height="default=1024", guidance_scale="default=3.5, not used by schnell", steps="default=4", model="default=schnell")
     @app_commands.choices(
         model=[
             app_commands.Choice(name="schnell", value="schnell"),
@@ -133,17 +141,17 @@ class FunCog(Default_Cog):
             rand = False
         start_time = time.time()
         if self.dev and model == "dev":
-            result = await self.bot.loop.run_in_executor(None,self.dev.predict,prompt,seed,rand,width,height,guidance_scale,steps,"/infer")
+            result = await self.bot.loop.run_in_executor(None, self.dev.predict, prompt, seed, rand, width, height, guidance_scale, steps, "/infer")
         elif self.merged and model == "merged":
-            result = await self.bot.loop.run_in_executor(None,self.merged.predict,prompt,seed,rand,width,height,guidance_scale,steps,"/infer")
+            result = await self.bot.loop.run_in_executor(None, self.merged.predict, prompt, seed, rand, width, height, guidance_scale, steps, "/infer")
         elif self.schnell and model == "schnell":
-            result = await self.bot.loop.run_in_executor(None, self.schnell.predict,prompt,seed,rand,width,height,steps,"/infer")
+            result = await self.bot.loop.run_in_executor(None, self.schnell.predict, prompt, seed, rand, width, height, steps, "/infer")
         else:
             return await ctx.send(f"Model {model} failed to load, try another one.", delete_after=10)
         image_path, seed = result
         if os.path.exists(image_path):
             gen_time = time.time() - start_time
-            await ctx.send(f'Generated image in {gen_time:.2f} seconds, seed: {seed}',file=discord.File(image_path))
+            await ctx.send(f'Generated image in {gen_time:.2f} seconds, seed: {seed}', file=discord.File(image_path))
             try:
                 os.remove(image_path)
                 folder = os.path.dirname(image_path)
@@ -153,6 +161,7 @@ class FunCog(Default_Cog):
                 await ctx.send(f"Error while cleaning up: {e}")
         else:
             await ctx.send("Sorry, there was an issue generating the image.")
+
 
 async def setup(bot: Bot):
     await bot.add_cog(FunCog(bot))

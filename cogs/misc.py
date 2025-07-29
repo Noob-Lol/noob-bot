@@ -1,7 +1,11 @@
-import discord, platform
-from discord.ext import commands
-from discord import app_commands
+import platform
+
 from bot import Bot, Default_Cog
+
+import discord
+from discord import app_commands
+from discord.ext import commands
+
 
 class MiscCog(Default_Cog):
     def __init__(self, bot: Bot):
@@ -57,11 +61,12 @@ class MiscCog(Default_Cog):
     @app_commands.describe(city="City name")
     async def weather(self, ctx: commands.Context, *, city: str):
         headers = {
-             # this is not my api key
+            # this is not my api key
             "X-RapidAPI-Key": "a3a7d073famsh43a70b10b861ed7p115a35jsnb340981d017b",
             "X-RapidAPI-Host": "weatherapi-com.p.rapidapi.com"
         }
-        async with self.bot.session.get("https://weatherapi-com.p.rapidapi.com/forecast.json", headers=headers, params={"q":city,"days":"3"}) as response:
+        url = "https://weatherapi-com.p.rapidapi.com/forecast.json"
+        async with self.bot.session.get(url, headers=headers, params={"q": city, "days": "3"}) as response:
             if response.status != 200:
                 await ctx.send("Failed to fetch weather data.")
                 self.logger.error(f"Weather API request failed with status {response.status}")
@@ -88,6 +93,7 @@ class MiscCog(Default_Cog):
     async def log_text(self, ctx, *, text: str):
         await self.bot.log_to_file(text, "test_log.txt")
         await self.bot.respond(ctx, "Message logged")
+
 
 async def setup(bot: Bot):
     await bot.add_cog(MiscCog(bot))

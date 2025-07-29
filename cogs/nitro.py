@@ -1,18 +1,30 @@
-import discord, os, datetime, asyncio, cloudscraper, pytz, re
+import asyncio
+import datetime
+import os
+import re
+from datetime import datetime as dt
+from datetime import timezone
+
+import cloudscraper
+import pytz
+from bot import Bot, Default_Cog
 from bs4 import BeautifulSoup
+
+import discord
 from discord import app_commands
 from discord.ext import commands, tasks
-from datetime import datetime as dt, timezone
-from bot import Bot, Default_Cog
-
 desc1, desc2 = "How many codes", "Where to send"
-def p(desc, default = None):
-    return commands.parameter(description=desc, default=default)
-no_active_promo_str = "There is no active nitro promotion. Check yourself: [Support page](<https://support.discord.com/hc/en-us/sections/22113084771863-Promotions>)"
 
+
+def p(desc, default=None):
+    return commands.parameter(description=desc, default=default)
+
+
+no_active_promo_str = "There is no active nitro promotion. Check yourself: [Support page](<https://support.discord.com/hc/en-us/sections/22113084771863-Promotions>)"
 tz_map = {abbr: "US/Pacific" for abbr in ("PT", "PST", "PDT")}
 tz_map.update({abbr: "US/Eastern" for abbr in ("ET", "EST", "EDT")})
 tz_map.update({"UTC": "UTC", "GMT": "GMT"})
+
 
 class NitroCog(Default_Cog):
     def __init__(self, bot: Bot):
@@ -160,7 +172,7 @@ class NitroCog(Default_Cog):
             if lines is None:
                 return await ctx.send("There was an error getting the codes.")
             if amount > 1:
-                codes = []  
+                codes = []
                 count = 0
                 for line in lines:
                     if line:
@@ -238,7 +250,7 @@ class NitroCog(Default_Cog):
             self.nitro_limit = amount
         await self.bot.counter.find_one_and_update({'_id': limit}, {'$set': {'count': amount}}, upsert=True)
         await self.bot.respond(ctx, f"Updated {limit} to {amount}.", False)
-    
+
     @commands.hybrid_command(name="what", help="View nitro limit.")
     async def get_limit(self, ctx):
         if not self.nitro_toggle:
@@ -295,9 +307,12 @@ class NitroCog(Default_Cog):
 
     @commands.hybrid_command(name="promos", help="Check active nitro promos.")
     async def promos(self, ctx):
-        if not self.nitro_toggle: return await self.bot.respond(ctx, "Nitro commands are disabled.")
-        if not self.active_promo: return await self.bot.respond(ctx, no_active_promo_str)
-        if not isinstance(self.active_promo, dict): return await self.bot.respond(ctx, "active_promo is not a dict.")
+        if not self.nitro_toggle:
+            return await self.bot.respond(ctx, "Nitro commands are disabled.")
+        if not self.active_promo:
+            return await self.bot.respond(ctx, no_active_promo_str)
+        if not isinstance(self.active_promo, dict):
+            return await self.bot.respond(ctx, "active_promo is not a dict.")
         await ctx.send(f"**Found an Active Free Nitro Promo!**\nName: {self.active_promo['name']}\nLink: {self.active_promo['url']}\nTime left: {self.active_promo['time_left']}")
 
     @tasks.loop(minutes=5)
@@ -306,9 +321,12 @@ class NitroCog(Default_Cog):
             if self.nitro_toggle:
                 if self.active_promo:
                     nitro_count = await self.bot.count_lines('nitro.txt')
-                    if nitro_count is None: nitro_count = "Error"
-                else: nitro_count = "No promo"
-            else: nitro_count = "Disabled"
+                    if nitro_count is None:
+                        nitro_count = "Error"
+                else:
+                    nitro_count = "No promo"
+            else:
+                nitro_count = "Disabled"
             ping = round(self.bot.latency * 1000)
             guild_count, user_count = len(self.bot.guilds), len(self.bot.users)
             for setting in self.embed_var:
@@ -317,7 +335,7 @@ class NitroCog(Default_Cog):
                 message_id = setting['message_id']
                 channel = self.bot.get_channel(channel_id)
                 if channel and isinstance(channel, discord.TextChannel):
-                    embed = discord.Embed(title="Bot Status", description="Online 24/7, hosted somewhere...", color=discord.Color.random(), timestamp = datetime.datetime.now())
+                    embed = discord.Embed(title="Bot Status", description="Online 24/7, hosted somewhere...", color=discord.Color.random(), timestamp=datetime.datetime.now())
                     embed.add_field(name="Servers", value=f"{guild_count}")
                     embed.add_field(name="Users", value=f"{user_count}")
                     embed.add_field(name="Ping", value=f"{ping} ms")
@@ -354,15 +372,15 @@ class NitroCog(Default_Cog):
 
     @commands.hybrid_command(name="embd", help="Disable embed updates in the current channel.")
     @commands.is_owner()
-    async def disable_embed(self,ctx):
+    async def disable_embed(self, ctx):
         existing_entry = await self.embed_settings.find_one({'guild_id': ctx.guild.id})
         if not existing_entry:
             return await self.bot.respond(ctx, "Embed updates are not enabled in this channel.")
         try:
             message = await ctx.channel.fetch_message(existing_entry['message_id'])
             await message.delete()
-        except:
-            pass
+        except Exception as e:
+            self.logger.exception(f"Failed to delete or fetch embed, ignoring: {e}")
         await self.embed_settings.delete_one({'guild_id': ctx.guild.id})
         for i in self.embed_var:
             if i['channel_id'] == ctx.channel.id:
@@ -371,7 +389,7 @@ class NitroCog(Default_Cog):
 
     @commands.hybrid_command(name='nitrotoggle', help='Toggle nitro related commands.')
     @commands.is_owner()
-    async def toggle_nitro(self, ctx, choice = None):
+    async def toggle_nitro(self, ctx, choice=None):
         if choice is None:
             self.nitro_toggle = not self.nitro_toggle
             await self.bot.counter.find_one_and_update({'_id': 'nitro_toggle'}, {'$set': {'state': self.nitro_toggle}}, upsert=True)
@@ -381,6 +399,7 @@ class NitroCog(Default_Cog):
             self.new_nitro_system = not self.new_nitro_system
             await self.bot.counter.find_one_and_update({'_id': 'new_nitro_system'}, {'$set': {'state': self.new_nitro_system}}, upsert=True)
             await self.bot.respond(ctx, f"New nitro system {'enabled' if self.new_nitro_system else 'disabled'}")
+
 
 async def setup(bot: Bot):
     await bot.add_cog(NitroCog(bot))

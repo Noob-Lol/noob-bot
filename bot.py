@@ -1,9 +1,20 @@
-import discord, os, aiohttp, dotenv, logging, time, inspect, asyncio, aiofiles
+import asyncio
+import inspect
+import logging
+import os
+import time
+
+import aiofiles
+import aiohttp
+import dotenv
 from aiohttp import web
+from async_pcloud import AsyncPyCloud
+from pymongo import AsyncMongoClient
+
+import discord
 from discord import app_commands
 from discord.ext import commands
-from pymongo import AsyncMongoClient
-from async_pcloud import AsyncPyCloud
+
 if os.name == 'nt' and not os.getenv('WT_SESSION'):
     try:
         # this fixes logger colors on windows
@@ -30,10 +41,11 @@ unloaded_coll = db['unloaded_cogs']
 disabled_coll = db['disabled_channels']
 disabled_com_coll = db['disabled_commands']
 
+
 class Bot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.all()
-        super().__init__(command_prefix = commands.when_mentioned_or(">"), intents = intents)
+        super().__init__(command_prefix=commands.when_mentioned_or(">"), intents=intents)
         self.script_path = script_path
         self.db = db
         self.counter = counter
@@ -58,8 +70,10 @@ class Bot(commands.Bot):
     async def setup_hook(self):
         await pcloud.connect()
         self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(7), raise_for_status=True)
-        try: await client.admin.command('ping')
-        except Exception as e: raise Exception(f'Failed to connect to MongoDB: {e}')
+        try:
+            await client.admin.command('ping')
+        except Exception as e:
+            raise Exception(f'Failed to connect to MongoDB: {e}')
         global unloaded_cogs, disabled_channels, disabled_commands
         unloaded_cogs = {cog['cog'] async for cog in unloaded_coll.find()}
         disabled_channels = {channel['_id'] async for channel in disabled_coll.find()}
@@ -72,7 +86,7 @@ class Bot(commands.Bot):
                 await bot.load_extension(f'cogs.{cog_name}')
             except commands.ExtensionAlreadyLoaded:
                 pass
-        disabled_commands_list = [bot.get_command(command) for command in disabled_commands if (_ := bot.get_command(command)) is not None]
+        disabled_commands_list = [bot.get_command(cmd) for cmd in disabled_commands if (_ := bot.get_command(cmd)) is not None]
         for command in disabled_commands_list:
             if command:
                 self.logger.info(f'Disabling command: {command.name}')
@@ -85,17 +99,20 @@ class Bot(commands.Bot):
         self.logger.info('Stopped.')
         await client.aclose()
 
-    async def download_file(self, file: str, not_found_ok = False):
-        """Download file content from pCloud and return as text. not_found_ok=True will not raise an exception if the file is not found."""
+    async def download_file(self, file: str, not_found_ok=False):
+        """Download file content from pCloud and return as text.
+        not_found_ok=True will not raise an exception if the file is not found."""
         if LOCAL_STORAGE:
             if not os.path.exists(f'{script_path}/{file}'):
-                if not_found_ok: return ''
-                raise Exception(f"Not found in local storage.")
+                if not_found_ok:
+                    return ''
+                raise Exception("Not found in local storage.")
             async with aiofiles.open(f'{script_path}/{file}', 'r') as f:
                 return await f.read()
         file_text = await pcloud.gettextfile(not_found_ok, path=file)
         if file_text is None:
-            if not_found_ok: return ''
+            if not_found_ok:
+                return ''
             raise Exception(f"Not found in folder '{folder}'.")
         return file_text
 
@@ -106,7 +123,8 @@ class Bot(commands.Bot):
                 await f.write(content)
             return
         r = await pcloud.upload_one_file(filename, content, path='/')
-        if r.get('error'): raise Exception(r['error'])
+        if r.get('error'):
+            raise Exception(r['error'])
 
     async def log_to_file(self, text: str, file: str):
         try:
@@ -122,7 +140,8 @@ class Bot(commands.Bot):
             async with self.file_lock:
                 text = await self.download_file(file)
                 lines = text.splitlines()
-                if not lines: return
+                if not lines:
+                    return
                 if num_lines > len(lines):
                     num_lines = len(lines)
                 lines_list = lines[:num_lines]
@@ -131,7 +150,7 @@ class Bot(commands.Bot):
                 return lines_list
         except Exception as e:
             self.logger.exception(f'Error for {file}: {e}')
-        
+
     async def count_lines(self, file: str):
         try:
             async with self.file_lock:
@@ -139,11 +158,13 @@ class Bot(commands.Bot):
                 return len(text.splitlines())
         except Exception as e:
             self.logger.exception(f'Error for {file}: {e}')
-    
+
     async def check_boost(self, guild_id: int, member_id: int):
         try:
-            if not RTOKEN: raise Exception('RTOKEN not found.')
-            response = await self.session.get(f'https://discord.com/api/v10/guilds/{guild_id}/premium/subscriptions', headers={'authorization': RTOKEN})
+            if not RTOKEN:
+                raise Exception('RTOKEN not found.')
+            url = f'https://discord.com/api/v10/guilds/{guild_id}/premium/subscriptions'
+            response = await self.session.get(url, headers={'authorization': RTOKEN})
             if response.status != 200:
                 self.logger.error(f'Error getting boost count for guild {guild_id}: {response.status}')
                 return False
@@ -161,15 +182,18 @@ class Bot(commands.Bot):
         except Exception as e:
             self.logger.error(f'Error checking boost for guild {guild_id}, member {member_id}: {e}')
             return False
-        
+
     async def respond(self, ctx: commands.Context, text: str, delete_after=5, ephemeral=True, del_cmd=True):
         # default respond function (saves space)
         if ctx.interaction:
-            await ctx.send(text, ephemeral = ephemeral)
+            await ctx.send(text, ephemeral=ephemeral)
         else:
-            if del_cmd: await ctx.message.delete()
-            if not delete_after: return await ctx.send(text)
-            await ctx.send(text, delete_after = delete_after)
+            if del_cmd:
+                await ctx.message.delete()
+            if not delete_after:
+                return await ctx.send(text)
+            await ctx.send(text, delete_after=delete_after)
+
 
 class Default_Cog(commands.Cog):
     def __init__(self, bot: Bot):
@@ -182,30 +206,35 @@ class Default_Cog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        if self._ready: return
+        if self._ready:
+            return
         self._ready = True
         await self.cog_on_ready()
-    
+
     @property
     def logger(self):
         """The custom logger for cogs."""
         return self.bot.logger
 
-bot = Bot()
 
+bot = Bot()
 descripts = {'type': 'The type of thing to toggle.', 'name': 'The name of the thing to toggle.'}
-def p(desc, default = None, *args,**kwargs):
-    return commands.parameter(description=desc, default=default, *args,**kwargs)
+
+
+def p(desc, default=None, *args, **kwargs):
+    return commands.parameter(description=desc, default=default, *args, **kwargs)
+
 
 @bot.check
 async def check_guild(ctx):
     return ctx.guild
 
+
 @bot.check
 async def check_channel(ctx):
     if ctx.channel.id in disabled_channels and ctx.command.name != 'toggle':
-        if ctx.interaction: 
-            await ctx.send("This channel is disabled.", ephemeral = True)
+        if ctx.interaction:
+            await ctx.send("This channel is disabled.", ephemeral=True)
         return False
     return True
 
@@ -213,15 +242,17 @@ async def check_channel(ctx):
 # @bot.check
 # async def check_user(ctx):
 #     if ctx.author.id in disabled_users and ctx.command.name != 'toggle':
-#         if ctx.interaction: 
+#         if ctx.interaction:
 #             await ctx.send("You are disabled.", ephemeral = True)
 #         return False
 #     return True
+
 
 @bot.event
 async def on_command(ctx):
     if await bot.is_owner(ctx.author):
         ctx.command.reset_cooldown(ctx)
+
 
 @bot.event
 async def on_command_error(ctx: commands.Context, error):
@@ -233,13 +264,13 @@ async def on_command_error(ctx: commands.Context, error):
         return
     if isinstance(error, commands.CheckFailure):
         if ctx.guild is None:
-            await ctx.send("You can't use commands in DMs.", ephemeral = True)
+            await ctx.send("You can't use commands in DMs.", ephemeral=True)
     elif isinstance(error, discord.HTTPException) and error.status == 429:
         bot.logger.warning(f"Rate limited. Retry in {error.response.headers['Retry-After']} seconds.")
     elif isinstance(error, discord.HTTPException) and error.status == 400:
         bot.logger.error(f"Bad request: {error.text}")
     elif isinstance(error, commands.CommandOnCooldown):
-        await ctx.send(f"This command is on cooldown. Please wait {error.retry_after:.2f}s", ephemeral = True, delete_after = 5)
+        await ctx.send(f"This command is on cooldown. Please wait {error.retry_after:.2f}s", ephemeral=True, delete_after=5)
     elif isinstance(error, app_commands.CommandInvokeError) and isinstance(error.original, discord.NotFound):
         bot.logger.error(error)
     elif isinstance(error, discord.NotFound):
@@ -247,7 +278,8 @@ async def on_command_error(ctx: commands.Context, error):
     elif isinstance(error, discord.Forbidden):
         bot.logger.error(error)
     else:
-        await ctx.send(str(error), ephemeral = True)
+        await ctx.send(str(error), ephemeral=True)
+
 
 @bot.event
 async def on_message(message: discord.Message):
@@ -260,44 +292,50 @@ async def on_message(message: discord.Message):
             await message.add_reaction('☠️')
     await bot.process_commands(message)
 
+
 @bot.hybrid_command(name="hi", help="Says hello")
 async def hi(ctx):
     await ctx.send('Hello!')
 
+
 @bot.hybrid_command(name="ping", help="Sends bot's latency.")
 async def ping(ctx):
-    await ctx.send(f'Pong! {round (bot.latency * 1000)} ms')
+    await ctx.send(f'Pong! {round(bot.latency * 1000)} ms')
+
 
 @bot.hybrid_command(name="dm", help="Sends a DM to a user")
 @commands.is_owner()
-async def dm(ctx, member:discord.Member, *, content):
+async def dm(ctx, member: discord.Member, *, content):
     try:
         await member.send(content)
         await bot.respond(ctx, "DM was sent")
     except Exception as e:
         await bot.respond(ctx, f"Could not send DM, {e}")
 
+
 @bot.hybrid_command(name="msg", help="Sends message as bot")
 @commands.is_owner()
 async def msg(ctx, channel: discord.TextChannel | None, *, text: str):
     if not channel:
         channel = ctx.channel
-        if not channel: return
+        if not channel:
+            return
     try:
         await channel.send(text)
         await bot.respond(ctx, "Message sent")
     except Exception as e:
         await bot.respond(ctx, f"Could not send message, {e}")
 
+
 @bot.hybrid_command(name="toggle", help="Toggles alot of things (owner only)")
 @commands.is_owner()
 @app_commands.describe(type=descripts['type'], name=descripts['name'])
 @app_commands.choices(
-    type = [
-        app_commands.Choice(name = 'cog', value = 'cog'),
-        app_commands.Choice(name = 'channel', value = 'channel'),
-        app_commands.Choice(name = 'command', value = 'command'),
-        app_commands.Choice(name = 'react', value = 'react')
+    type=[
+        app_commands.Choice(name='cog', value='cog'),
+        app_commands.Choice(name='channel', value='channel'),
+        app_commands.Choice(name='command', value='command'),
+        app_commands.Choice(name='react', value='react')
     ]
 )
 async def toggle_thing(ctx: commands.Context, type: str = p(descripts['type']), name: str | None = p(descripts['name'])):
@@ -355,16 +393,21 @@ async def toggle_thing(ctx: commands.Context, type: str = p(descripts['type']), 
         else:
             await disabled_com_coll.insert_one({"command": command})
         await bot.respond(ctx, f"Command {command} is now {'enabled' if result else 'disabled'}")
+    else:
+        await bot.respond(ctx, "Invalid type.")
+
 
 @bot.command(name="sync", help="Syncs commands")
 @commands.is_owner()
 async def sync(ctx):
-    await ctx.message.delete()         
-    await bot.tree.sync()      
+    await ctx.message.delete()
+    await bot.tree.sync()
     await ctx.send("Synced!", delete_after=3)
+
 
 async def web_status(_):
     return web.Response(text='OK')
+
 
 @bot.event
 async def on_ready():
