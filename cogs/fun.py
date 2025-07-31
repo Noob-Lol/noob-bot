@@ -103,7 +103,8 @@ class FunCog(Default_Cog):
                             "content": [
                                 {
                                     "type": "text",
-                                    "text": "You are a helpful Discord bot. Keep your answers short and to the point. Free nitro is real only if its from official Discord promotion."
+                                    "text": "You are a helpful Discord bot. Keep your answers short and to the point."
+                                    "Free nitro is real only if its from official Discord promotion."
                                 },
                                 {
                                     "type": "text",
@@ -125,27 +126,35 @@ class FunCog(Default_Cog):
 
     @commands.hybrid_command(name="image", help="Generates an image")
     @commands.cooldown(1, 30, commands.BucketType.user)
-    @app_commands.describe(prompt="A prompt for the image", seed="default=random", width="default=1024", height="default=1024", guidance_scale="default=3.5, not used by schnell", steps="default=4", model="default=schnell")
+    @app_commands.describe(
+        prompt="A prompt for the image", seed="default=random", width="default=1024", height="default=1024",
+        guidance_scale="default=3.5, not used by schnell", steps="default=4", model="default=schnell"
+        )
     @app_commands.choices(
         model=[
             app_commands.Choice(name="schnell", value="schnell"),
             app_commands.Choice(name="merged", value="merged"),
             app_commands.Choice(name="dev", value="dev")
         ])
-    async def image(self, ctx: commands.Context, *, prompt: str, seed: int = 0, width: int = 1024, height: int = 1024, guidance_scale: float = 3.5, steps: int = 4, model: str = "schnell"):
+    async def image(self, ctx: commands.Context, *, prompt: str, seed: int = 0, width: int = 1024, height: int = 1024,
+                    guidance_scale: float = 3.5, steps: int = 4, model: str = "schnell"):
         await ctx.defer()
-        await self.bot.log_to_file(f'{ctx.author}, prompt: {prompt}, seed: {seed}, width: {width}, height: {height}, guidance_scale: {guidance_scale},steps: {steps}, model: {model}', "log.txt")
-        # i will manually ban users who type something offensive
         rand = True
         if seed != 0:
             rand = False
+        arg_names = ["prompt", "seed", None, "width", "height", "guidance_scale", "steps"]
+        args = [prompt, seed, rand, width, height, guidance_scale, steps]
+        log_args = ', '.join(f"{name}: {value}" for name, value in zip(arg_names, args) if name is not None)
+        # i will manually ban users who type something offensive
+        await self.bot.log_to_file(f'{ctx.author}, {log_args}, model: {model}', "log.txt")
         start_time = time.time()
         if self.dev and model == "dev":
-            result = await self.bot.loop.run_in_executor(None, self.dev.predict, prompt, seed, rand, width, height, guidance_scale, steps, "/infer")
+            result = await self.bot.loop.run_in_executor(None, self.dev.predict, *args, "/infer")
         elif self.merged and model == "merged":
-            result = await self.bot.loop.run_in_executor(None, self.merged.predict, prompt, seed, rand, width, height, guidance_scale, steps, "/infer")
+            result = await self.bot.loop.run_in_executor(None, self.merged.predict, *args, "/infer")
         elif self.schnell and model == "schnell":
-            result = await self.bot.loop.run_in_executor(None, self.schnell.predict, prompt, seed, rand, width, height, steps, "/infer")
+            args.remove(guidance_scale)
+            result = await self.bot.loop.run_in_executor(None, self.schnell.predict, *args, "/infer")
         else:
             return await ctx.send(f"Model {model} failed to load, try another one.", delete_after=10)
         image_path, seed = result

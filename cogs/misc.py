@@ -16,10 +16,8 @@ class MiscCog(Default_Cog):
     @commands.cooldown(1, 5, commands.BucketType.user)
     async def add(self, ctx):
         counter = self.bot.counter
-        await counter.find_one_and_update({'_id': 'counter'}, {'$inc': {'count': 1}}, upsert=True)
-        result = await counter.find_one({'_id': 'counter'})
-        if result:
-            await ctx.send(f'Counter incremented to {result["count"]}')
+        result = await counter.find_one_and_update({'_id': 'counter'}, {'$inc': {'count': 1}}, upsert=True)
+        await ctx.send(f'Counter incremented to {result["count"] + 1}.')
 
     @commands.hybrid_command(name="dmme", help="Sends a DM to the author")
     async def dmme(self, ctx, *, text: str):
@@ -77,7 +75,8 @@ class MiscCog(Default_Cog):
             await ctx.send("This api key is cooked, owner needs to get a new one")
             self.logger.error("Weather API key is cooked")
             return
-        embed = discord.Embed(title=f"Weather in {weather['location']['name']}, {weather['location']['country']}", color=discord.Color.blue())
+        title = f"Weather in {weather['location']['name']}, {weather['location']['country']}"
+        embed = discord.Embed(title=title, color=discord.Color.blue())
         embed.add_field(name="Local Time", value=weather['location']['localtime'], inline=False)
         embed.add_field(name="Temperature", value=f"{weather['current']['temp_c']}℃")
         embed.add_field(name="Condition", value=weather['current']['condition']['text'])
@@ -85,7 +84,9 @@ class MiscCog(Default_Cog):
         embed.add_field(name="Feels like", value=f"{weather['current']['feelslike_c']}℃")
         for i in range(3):
             forecast = weather['forecast']['forecastday'][i]
-            embed.add_field(name=forecast['date'], value=f"{forecast['day']['maxtemp_c']} ~ {forecast['day']['mintemp_c']}℃, rain chance: {forecast['day']['daily_chance_of_rain']}", inline=False)
+            temp = f"Temp: {forecast['day']['maxtemp_c']} ~ {forecast['day']['mintemp_c']}℃"
+            rain = f"rain chance: {forecast['day']['daily_chance_of_rain']}"
+            embed.add_field(name=forecast['date'], value=f"{temp}, {rain}", inline=False)
         await ctx.send(embed=embed)
 
     @commands.hybrid_command(name="log", help="Logs a message to the log file")
