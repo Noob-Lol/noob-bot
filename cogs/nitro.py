@@ -1,6 +1,5 @@
 import asyncio
 import datetime
-import os
 import re
 
 import cloudscraper
@@ -138,7 +137,7 @@ class NitroCog(Default_Cog):
             return await self.bot.respond(ctx, "Nitro commands are disabled.")
         if not self.active_promo:
             return await self.bot.respond(ctx, no_active_promo_str)
-        if os.path.exists(f'{self.bot.script_path}/lock.txt'):
+        if self.bot.lock_exists():
             return await self.bot.respond(ctx, 'The bot is in maintenance, please retry later.')
         if not isinstance(ctx.author, discord.Member) or not ctx.guild:
             return await ctx.send("You must use this command in a server.")
@@ -376,7 +375,8 @@ class NitroCog(Default_Cog):
                 elif channel:
                     self.logger.warning(f"Channel {channel_id} is not a TextChannel, skipping embed update.")
                 else:
-                    self.logger.warning(f"Bot does not have access to {channel_id}")
+                    if "beta" not in str(self.bot.user).lower():
+                        self.logger.warning(f"Bot does not have access to {channel_id}")
         except discord.NotFound:
             await self.embed_settings.delete_one({'guild_id': guild_id})
             self.embed_var.remove(setting)

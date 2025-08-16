@@ -2,7 +2,6 @@ import asyncio
 import inspect
 import logging
 import os
-import time
 
 import aiofiles
 import aiohttp
@@ -23,8 +22,11 @@ if os.name == 'nt' and not os.getenv('WT_SESSION'):
         os.environ['WT_SESSION'] = 'bruh'
     except ImportError:
         pass
-start_time = time.time()
 bot_name = 'noob_bot'
+logging.getLogger('discord').setLevel(logging.INFO)
+my_loggers = [bot_name, 'bot']
+for logger in my_loggers:
+    logging.getLogger(logger).setLevel(logging.INFO)
 dotenv.load_dotenv()
 script_path = os.path.dirname(__file__)
 TOKEN = os.environ['TOKEN']
@@ -67,13 +69,10 @@ class Bot(commands.Bot):
             return logging.getLogger(f'{bot_name}.{func_name}')
         return logging.getLogger(bot_name)
 
+    # bot events
     async def setup_hook(self):
         await pcloud.connect()
         self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(7), raise_for_status=True)
-        try:
-            await client.admin.command('ping')
-        except Exception as e:
-            raise Exception(f'Failed to connect to MongoDB: {e}')
         global unloaded_cogs, disabled_channels, disabled_commands
         unloaded_cogs = {cog['cog'] async for cog in unloaded_coll.find()}
         disabled_channels = {channel['_id'] async for channel in disabled_coll.find()}
@@ -83,14 +82,73 @@ class Bot(commands.Bot):
             if cog_name in unloaded_cogs:
                 continue
             try:
-                await bot.load_extension(f'cogs.{cog_name}')
+                await self.load_extension(f'cogs.{cog_name}')
             except commands.ExtensionAlreadyLoaded:
                 pass
-        disabled_commands_list = [bot.get_command(cmd) for cmd in disabled_commands if (_ := bot.get_command(cmd)) is not None]
+        disabled_commands_list = [self.get_command(cmd) for cmd in disabled_commands if self.get_command(cmd)]
         for command in disabled_commands_list:
             if command:
                 self.logger.info(f'Disabling command: {command.name}')
                 command.enabled = False
+        app = web.Application()
+
+        def count_values():
+            return (f"Guilds: {len(self.guilds)}, Users: {len(self.users)}, "
+                    f"Commands: {len(self.commands)}, Cogs: {len(self.cogs)}, Ping: {round(self.latency * 1000)}ms")
+
+        async def web_status(_):
+            return web.Response(text=f"Bot is running as {self.user}, {count_values()}")
+        app.router.add_get('/', web_status)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        host, port = '0.0.0.0', os.getenv('SERVER_PORT') or os.getenv('PORT') or 8000
+        try:
+            await web.TCPSite(runner, host, int(port)).start()
+        except OSError:
+            self.logger.error(f'Port {port} is already in use')
+
+    async def on_ready(self):
+        await self.change_presence(activity=discord.CustomActivity(name='im cool 😎, ">" prefix'))
+        self.logger.info(f'Logged in as {self.user}')
+
+    async def on_message(self, message: discord.Message):
+        if message.author == self.user:
+            return
+        if '>nitro' in message.content.lower():
+            if not self.react:
+                pass
+            else:
+                await message.add_reaction('☠️')
+        await self.process_commands(message)
+
+    async def on_command(self, ctx: commands.Context):
+        if await self.is_owner(ctx.author) and ctx.command:
+            ctx.command.reset_cooldown(ctx)
+
+    async def on_command_error(self, ctx: commands.Context, error):
+        if hasattr(ctx.command, 'on_error') and not hasattr(ctx, 'unhandled_error'):
+            return
+        ignored = (commands.CommandNotFound, app_commands.errors.CommandNotFound, )
+        error = getattr(error, 'original', error)
+        if isinstance(error, ignored):
+            return
+        if isinstance(error, commands.CheckFailure):
+            if ctx.guild is None:
+                await ctx.send("You can't use commands in DMs.", ephemeral=True)
+        elif isinstance(error, discord.HTTPException) and error.status == 429:
+            self.logger.warning(f"Rate limited. Retry in {error.response.headers['Retry-After']} seconds.", exc_info=error)
+        elif isinstance(error, discord.HTTPException) and error.status == 400:
+            self.logger.exception(f"Bad request: {error.text}")
+        elif isinstance(error, commands.CommandOnCooldown):
+            await self.respond(ctx, f"This command is on cooldown. Please wait {error.retry_after:.2f}s")
+        elif isinstance(error, app_commands.CommandInvokeError) and isinstance(error.original, discord.NotFound):
+            self.logger.exception(error)
+        elif isinstance(error, discord.NotFound):
+            self.logger.exception(error)
+        elif isinstance(error, discord.Forbidden):
+            self.logger.exception(error)
+        else:
+            await ctx.send(str(error), ephemeral=True)
 
     async def close(self):
         await super().close()
@@ -99,6 +157,7 @@ class Bot(commands.Bot):
         self.logger.info('Stopped.')
         await client.aclose()
 
+    # custom functions
     async def download_file(self, file: str, not_found_ok=False):
         """Download file content from pCloud and return as text.
         not_found_ok=True will not raise an exception if the file is not found."""
@@ -184,7 +243,7 @@ class Bot(commands.Bot):
             return False
 
     async def respond(self, ctx: commands.Context, text: str, delete_after=5, ephemeral=True, del_cmd=True):
-        # default respond function (saves space)
+        """default respond function (useful)"""
         if ctx.interaction:
             await ctx.send(text, ephemeral=ephemeral)
         else:
@@ -193,6 +252,14 @@ class Bot(commands.Bot):
             if not delete_after:
                 return await ctx.send(text)
             await ctx.send(text, delete_after=delete_after)
+
+    def get_env(self, key, default: str | None = None):
+        """Get an environment variable."""
+        return os.getenv(key, default)
+
+    def lock_exists(self):
+        """Check if the lock file exists."""
+        return os.path.exists(f'{self.script_path}/lock.txt')
 
 
 class Default_Cog(commands.Cog):
@@ -246,51 +313,6 @@ async def check_channel(ctx):
 #             await ctx.send("You are disabled.", ephemeral = True)
 #         return False
 #     return True
-
-
-@bot.event
-async def on_command(ctx):
-    if await bot.is_owner(ctx.author):
-        ctx.command.reset_cooldown(ctx)
-
-
-@bot.event
-async def on_command_error(ctx: commands.Context, error):
-    if hasattr(ctx.command, 'on_error') and not hasattr(ctx, 'unhandled_error'):
-        return
-    ignored = (commands.CommandNotFound, app_commands.errors.CommandNotFound, )
-    error = getattr(error, 'original', error)
-    if isinstance(error, ignored):
-        return
-    if isinstance(error, commands.CheckFailure):
-        if ctx.guild is None:
-            await ctx.send("You can't use commands in DMs.", ephemeral=True)
-    elif isinstance(error, discord.HTTPException) and error.status == 429:
-        bot.logger.warning(f"Rate limited. Retry in {error.response.headers['Retry-After']} seconds.")
-    elif isinstance(error, discord.HTTPException) and error.status == 400:
-        bot.logger.error(f"Bad request: {error.text}")
-    elif isinstance(error, commands.CommandOnCooldown):
-        await ctx.send(f"This command is on cooldown. Please wait {error.retry_after:.2f}s", ephemeral=True, delete_after=5)
-    elif isinstance(error, app_commands.CommandInvokeError) and isinstance(error.original, discord.NotFound):
-        bot.logger.error(error)
-    elif isinstance(error, discord.NotFound):
-        bot.logger.error(error)
-    elif isinstance(error, discord.Forbidden):
-        bot.logger.error(error)
-    else:
-        await ctx.send(str(error), ephemeral=True)
-
-
-@bot.event
-async def on_message(message: discord.Message):
-    if message.author == bot.user:
-        return
-    if '>nitro' in message.content.lower():
-        if not bot.react:
-            pass
-        else:
-            await message.add_reaction('☠️')
-    await bot.process_commands(message)
 
 
 @bot.hybrid_command(name="hi", help="Says hello")
@@ -405,27 +427,5 @@ async def sync(ctx):
     await ctx.send("Synced!", delete_after=3)
 
 
-async def web_status(_):
-    return web.Response(text='OK')
-
-
-@bot.event
-async def on_ready():
-    app = web.Application()
-    app.router.add_get('/', web_status)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    host, port = '0.0.0.0', 8000
-    try:
-        await web.TCPSite(runner, host, port).start()
-    except OSError:
-        bot.logger.error(f'Port {port} is already in use')
-    await bot.change_presence(activity=discord.CustomActivity(name='im cool 😎, ">" prefix'))
-    bot.logger.info(f'Logged in as {bot.user}, in {time.time()-start_time:.2f}s, ping: {round(bot.latency * 1000)}ms')
-
 if __name__ == "__main__":
-    logging.getLogger('discord').setLevel(logging.INFO)
-    my_loggers = [bot_name, 'bot']
-    for logger in my_loggers:
-        logging.getLogger(logger).setLevel(logging.INFO)
     bot.run(TOKEN, log_level=logging.WARNING, root_logger=True)
