@@ -5,6 +5,10 @@
 - It is used at [Noob Network](https://discord.gg/JKyNh3dkAt)
 - The most used command is nitro, because everyone wants free nitro.
 
+## Latest update
+
+this bot just got a website! https://noob.pics (separate project)
+
 ## Disclaimer
 
 - This bot does not make nitro links by itself!
