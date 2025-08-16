@@ -1,4 +1,5 @@
 import datetime
+import secrets
 # import random
 
 from bot import Bot, Default_Cog
@@ -13,6 +14,9 @@ class EconomyCog(Default_Cog):
         super().__init__(bot)
         self.eco = bot.db["economy"]
         self.farm_usage = bot.db["farm_usage"]
+        self.auth_tokens_coll = bot.db["auth_tokens"]
+        self.dash_url = bot.get_env("DASH_URL")
+        self.logger.info(f"Dashboard link: {self.dash_url}")
         self.cleanup_old_farm.start()
 
     @commands.hybrid_command(name="farm", help="Gives some nitro credits")
@@ -39,6 +43,22 @@ class EconomyCog(Default_Cog):
             new_bal = amount
             await self.eco.insert_one({"_id": user_id, "balance": new_bal})
         await ctx.send(f"{ctx.author.mention}, you have been given {amount:g} nitro credits! Your new balance is {new_bal:g}.")
+
+    @commands.hybrid_command(name="dash", help="Get your personal dashboard link")
+    async def dashboard(self, ctx: commands.Context):
+        if not self.dash_url:
+            return await ctx.send("Dashboard link is not set.")
+        if not ctx.interaction:
+            return await ctx.send("For security, you must use slash version of this command.")
+        token = secrets.token_urlsafe(16)
+        discord_id = ctx.author.id
+        await self.auth_tokens_coll.insert_one({
+            "_id": token,
+            "discord_id": discord_id,
+            "created_at": datetime.datetime.now(datetime.timezone.utc)
+        })
+        url = f"{self.dash_url}/{token}"
+        await self.bot.respond(ctx, f"Here is your dashboard link: [Click]({url})")
 
     @commands.hybrid_command(name="give", help="Gives nitro credits to another user")
     @commands.cooldown(1, 10, commands.BucketType.user)
