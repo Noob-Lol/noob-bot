@@ -57,7 +57,7 @@ class EconomyCog(Default_Cog):
             "discord_id": discord_id,
             "created_at": datetime.datetime.now(datetime.timezone.utc)
         })
-        url = f"{self.dash_url}/{token}"
+        url = f"{self.dash_url}?token={token}"
         await self.bot.respond(ctx, f"Here is your dashboard link: [Click]({url})")
 
     @commands.hybrid_command(name="give", help="Gives nitro credits to another user")
