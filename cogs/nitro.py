@@ -3,13 +3,13 @@ import datetime
 import re
 
 import cloudscraper
-import pytz
-from bot import Bot, Default_Cog
-from bs4 import BeautifulSoup
-
 import discord
+import pytz
+from bs4 import BeautifulSoup
 from discord import app_commands
 from discord.ext import commands, tasks
+
+from bot import Bot, Default_Cog
 
 
 def p(desc, default=None):
@@ -19,9 +19,11 @@ def p(desc, default=None):
 desc1, desc2 = "How many codes", "Where to send"
 promos_link = "https://support.discord.com/hc/en-us/sections/22113084771863-Promotions"
 no_active_promo_str = f"There is no active nitro promotion. Check yourself: [Support page](<{promos_link}>)"
-tz_map = {abbr: "US/Pacific" for abbr in ("PT", "PST", "PDT")}
-tz_map.update({abbr: "US/Eastern" for abbr in ("ET", "EST", "EDT")})
-tz_map.update({"UTC": "UTC", "GMT": "GMT"})
+tz_map = {
+    "PT": "US/Pacific", "PST": "US/Pacific", "PDT": "US/Pacific",
+    "ET": "US/Eastern", "EST": "US/Eastern", "EDT": "US/Eastern",
+    "UTC": "UTC", "GMT": "GMT"
+}
 
 
 class NitroCog(Default_Cog):
@@ -67,7 +69,7 @@ class NitroCog(Default_Cog):
 
     def get_active_promo(self, scraper: cloudscraper.CloudScraper):
         """Tries to find some active nitro promotion. Returns True on success."""
-        base = 'https://support.discord.com'
+        base = "https://support.discord.com"
         html = scraper.get(promos_link).text
         soup = BeautifulSoup(html, 'html.parser')
         exclusions = {'customers', 'youtube', 'game pass ultimate'}
@@ -87,7 +89,8 @@ class NitroCog(Default_Cog):
                 now = datetime.datetime.now(datetime.timezone.utc)
                 is_active = start_date <= now <= end_date
                 if is_active:
-                    return {'name': name, 'url': href, 'time_left': end_date - now}
+                    time_left = str(end_date - now).split('.')[0]
+                    return {'name': name, 'url': base + href, 'time_left': time_left}
         return False
 
     async def old_nitro_check(self, ctx: commands.Context, amount: int, user_id: int):
@@ -99,7 +102,9 @@ class NitroCog(Default_Cog):
         limit = self.nitro_limit
         if result:
             rcount = result['count']
-            if ctx.author.premium_since:
+            if not ctx.author.premium_since:
+                boost_count = 0
+            else:
                 boost_count = await self.bot.check_boost(ctx.guild.id, user_id)
                 if not boost_count:
                     return await ctx.send("There was an error getting your boost count.")
@@ -108,13 +113,14 @@ class NitroCog(Default_Cog):
                 elif boost_count >= 2:
                     limit *= self.b2mult
             if rcount >= limit:
-                if ctx.author.premium_since:
-                    if boost_count == 1:
-                        await ctx.send("You have reached the daily limit. Try again tomorrow or boost again.", delete_after=15)
-                    elif boost_count >= 2:
-                        await ctx.send("You have reached the daily limit. Try again tomorrow.", delete_after=15)
-                else:
+                if boost_count == 0:
                     await ctx.send("You have reached the free limit. Try again tomorrow or boost the server.", delete_after=15)
+                elif boost_count == 1:
+                    await ctx.send("You have reached the daily limit. Try again tomorrow or boost again.", delete_after=15)
+                elif boost_count >= 2:
+                    await ctx.send("You have reached the daily limit. Try again tomorrow.", delete_after=15)
+                else:
+                    await ctx.send("Reached the daily limit, idk boost count.", delete_after=15)
                 return
             elif rcount + amount > limit:
                 amount = limit - rcount
@@ -284,36 +290,35 @@ class NitroCog(Default_Cog):
         if not result:
             result = {}
             result['count'] = 0
-        if result:
-            count = result['count']
+        count = result['count']
 
-            def count_usage():
-                """Returns the "Your usage is count/limit" string, calculated."""
-                if boost_count == 0:
-                    mult = 1
-                elif boost_count == 1:
-                    mult = self.b1mult
-                elif boost_count == 2:
-                    mult = self.b2mult
-                elif boost_count > 2:
-                    mult = self.b2mult
-                    return f"There are no more perks after 2 boosts. Your usage is {count}/{self.nitro_limit*mult}."
-                else:
-                    mult = 1
-                return f"Your usage is {count}/{self.nitro_limit*mult}."
-            boost_count = 0
-            if member.premium_since:
-                boost_count = await self.bot.check_boost(ctx.guild.id, member.id)
-                if not boost_count:
-                    return await ctx.send("There was an error getting your boost count.")
-                if boost_count == 1:
-                    await ctx.send(f"1 boost. {count_usage()}")
-                elif boost_count == 2:
-                    await ctx.send(f"2 boosts. {count_usage()}")
-                else:
-                    await ctx.send(f"{boost_count} boosts. {count_usage()}")
+        def count_usage():
+            """Returns the "Your usage is count/limit" string, calculated."""
+            if boost_count == 0:
+                mult = 1
+            elif boost_count == 1:
+                mult = self.b1mult
+            elif boost_count == 2:
+                mult = self.b2mult
+            elif boost_count > 2:
+                mult = self.b2mult
+                return f"There are no more perks after 2 boosts. Your usage is {count}/{self.nitro_limit*mult}."
             else:
-                await ctx.send(f"No boosts. {count_usage()}")
+                mult = 1
+            return f"Your usage is {count}/{self.nitro_limit*mult}."
+        boost_count = 0
+        if member.premium_since:
+            boost_count = await self.bot.check_boost(ctx.guild.id, member.id)
+            if not boost_count:
+                return await ctx.send("There was an error getting your boost count.")
+            if boost_count == 1:
+                await ctx.send(f"1 boost. {count_usage()}")
+            elif boost_count == 2:
+                await ctx.send(f"2 boosts. {count_usage()}")
+            else:
+                await ctx.send(f"{boost_count} boosts. {count_usage()}")
+        else:
+            await ctx.send(f"No boosts. {count_usage()}")
 
     @tasks.loop(hours=24)
     async def cleanup_old_usage(self):
@@ -343,6 +348,7 @@ class NitroCog(Default_Cog):
 
     @tasks.loop(minutes=5)
     async def update_embed(self):
+        setting, guild_id = None, None
         try:
             if self.nitro_toggle:
                 if self.active_promo:

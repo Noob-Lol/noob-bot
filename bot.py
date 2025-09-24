@@ -5,14 +5,13 @@ import os
 
 import aiofiles
 import aiohttp
+import discord
 import dotenv
 from aiohttp import web
 from async_pcloud import AsyncPyCloud
-from pymongo import AsyncMongoClient
-
-import discord
 from discord import app_commands
 from discord.ext import commands
+from pymongo import AsyncMongoClient
 
 if os.name == 'nt' and not os.getenv('WT_SESSION'):
     try:
@@ -138,17 +137,16 @@ class Bot(commands.Bot):
         elif isinstance(error, discord.HTTPException) and error.status == 429:
             self.logger.warning(f"Rate limited. Retry in {error.response.headers['Retry-After']} seconds.", exc_info=error)
         elif isinstance(error, discord.HTTPException) and error.status == 400:
-            self.logger.exception(f"Bad request: {error.text}")
+            self.logger.exception(f"Bad request: {error.text}", exc_info=error)
         elif isinstance(error, commands.CommandOnCooldown):
             await self.respond(ctx, f"This command is on cooldown. Please wait {error.retry_after:.2f}s")
         elif isinstance(error, app_commands.CommandInvokeError) and isinstance(error.original, discord.NotFound):
-            self.logger.exception(error)
-        elif isinstance(error, discord.NotFound):
-            self.logger.exception(error)
-        elif isinstance(error, discord.Forbidden):
-            self.logger.exception(error)
+            self.logger.exception(error, exc_info=error)
+        elif isinstance(error, (discord.NotFound, discord.Forbidden)):
+            self.logger.exception(error, exc_info=error)
         else:
-            await ctx.send(str(error), ephemeral=True)
+            self.logger.exception(f'Ignoring exception in command {ctx.command}:', exc_info=error)
+            await ctx.send(f"Exception in command {ctx.command}: {str(error)}", ephemeral=True)
 
     async def close(self):
         await super().close()
@@ -166,7 +164,7 @@ class Bot(commands.Bot):
                 if not_found_ok:
                     return ''
                 raise Exception("Not found in local storage.")
-            async with aiofiles.open(f'{script_path}/{file}', 'r') as f:
+            async with aiofiles.open(f'{script_path}/{file}') as f:
                 return await f.read()
         file_text = await pcloud.gettextfile(not_found_ok, path=file)
         if file_text is None:
@@ -275,8 +273,8 @@ class Default_Cog(commands.Cog):
     async def on_ready(self):
         if self._ready:
             return
-        self._ready = True
         await self.cog_on_ready()
+        self._ready = True
 
     @property
     def logger(self):
@@ -288,8 +286,8 @@ bot = Bot()
 descripts = {'type': 'The type of thing to toggle.', 'name': 'The name of the thing to toggle.'}
 
 
-def p(desc, default=None, *args, **kwargs):
-    return commands.parameter(description=desc, default=default, *args, **kwargs)
+def p(desc, default=None):
+    return commands.parameter(description=desc, default=default)
 
 
 @bot.check
@@ -360,63 +358,66 @@ async def msg(ctx, channel: discord.TextChannel | None, *, text: str):
         app_commands.Choice(name='react', value='react')
     ]
 )
-async def toggle_thing(ctx: commands.Context, type: str = p(descripts['type']), name: str | None = p(descripts['name'])):
+async def toggle_thing(ctx, type: str = p(descripts['type']), name: str | None = p(descripts['name'])):
     if type == 'cog':
-        cog = name
-        if not cog:
-            await bot.respond(ctx, "Please provide a cog name.")
-            return
-        try:
-            cog_name = ''
-            for key, _ in bot.cogs.items():
-                if cog.lower() in key.lower():
-                    cog_name = key
-                    break
-            if cog_name in bot.cogs:
-                await bot.unload_extension(f'cogs.{cog}')
-                await unloaded_coll.insert_one({"cog": cog})
-                await bot.respond(ctx, f"Disabled {cog}")
-            elif cog in unloaded_cogs:
-                await bot.load_extension(f'cogs.{cog}')
-                await unloaded_coll.delete_one({"cog": cog})
-                await bot.respond(ctx, f"Enabled {cog}")
-            else:
-                await bot.respond(ctx, f"Cog not found: {cog}")
-        except Exception as e:
-            await bot.respond(ctx, f"Error: {e}", 10)
+        await handle_toggle_cog(ctx, name)
     elif type == 'channel':
-        if ctx.channel.id in disabled_channels:
-            result = await disabled_coll.delete_one({"_id": ctx.channel.id})
-            if result.deleted_count > 0:
-                disabled_channels.remove(ctx.channel.id)
-                await ctx.send("This channel has been enabled for bot commands.")
-        else:
-            await disabled_coll.insert_one({"_id": ctx.channel.id})
-            disabled_channels.add(ctx.channel.id)
-            await ctx.send("This channel has been disabled for bot commands.")
+        await handle_toggle_channel(ctx)
     elif type == 'react':
         bot.react = not bot.react
         await bot.respond(ctx, f"Reactions are now {'enabled' if bot.react else 'disabled'}")
     elif type == 'command':
-        command = name
-        if not command:
-            await bot.respond(ctx, "Please provide a command name.")
-            return
-        found = bot.get_command(command)
-        if ctx.command == found:
-            await bot.respond(ctx, "You can't disable the toggle command.")
-            return
-        if not found:
-            await bot.respond(ctx, "Command not found.")
-            return
-        result = found.enabled = not found.enabled
-        if result:
-            await disabled_com_coll.delete_one({"command": command})
-        else:
-            await disabled_com_coll.insert_one({"command": command})
-        await bot.respond(ctx, f"Command {command} is now {'enabled' if result else 'disabled'}")
+        await handle_toggle_command(ctx, name)
     else:
         await bot.respond(ctx, "Invalid type.")
+
+async def handle_toggle_cog(ctx, cog):
+    if not cog:
+        return await bot.respond(ctx, "Please provide a cog name.")
+    try:
+        cog_name = ''
+        for key, _ in bot.cogs.items():
+            if cog.lower() in key.lower():
+                cog_name = key
+                break
+        if cog_name in bot.cogs:
+            await bot.unload_extension(f'cogs.{cog}')
+            await unloaded_coll.insert_one({"cog": cog})
+            await bot.respond(ctx, f"Disabled {cog}")
+        elif cog in unloaded_cogs:
+            await bot.load_extension(f'cogs.{cog}')
+            await unloaded_coll.delete_one({"cog": cog})
+            await bot.respond(ctx, f"Enabled {cog}")
+        else:
+            await bot.respond(ctx, f"Cog not found: {cog}")
+    except Exception as e:
+        await bot.respond(ctx, f"Error: {e}", 10)
+
+async def handle_toggle_channel(ctx):
+    if ctx.channel.id in disabled_channels:
+        result = await disabled_coll.delete_one({"_id": ctx.channel.id})
+        if result.deleted_count > 0:
+            disabled_channels.remove(ctx.channel.id)
+            await ctx.send("This channel has been enabled for bot commands.")
+    else:
+        await disabled_coll.insert_one({"_id": ctx.channel.id})
+        disabled_channels.add(ctx.channel.id)
+        await ctx.send("This channel has been disabled for bot commands.")
+
+async def handle_toggle_command(ctx, command):
+    if not command:
+        return await bot.respond(ctx, "Please provide a command name.")
+    found = bot.get_command(command)
+    if ctx.command == found:
+        return await bot.respond(ctx, "You can't disable the toggle command.")
+    if not found:
+        return await bot.respond(ctx, "Command not found.")
+    result = found.enabled = not found.enabled
+    if result:
+        await disabled_com_coll.delete_one({"command": command})
+    else:
+        await disabled_com_coll.insert_one({"command": command})
+    await bot.respond(ctx, f"Command {command} is now {'enabled' if result else 'disabled'}")
 
 
 @bot.command(name="sync", help="Syncs commands")

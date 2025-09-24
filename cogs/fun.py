@@ -2,13 +2,13 @@ import os
 import random
 import time
 
-from bot import Bot, Default_Cog
-from gradio_client import Client
-from openai import AsyncOpenAI
-
 import discord
 from discord import app_commands
 from discord.ext import commands
+from gradio_client import Client
+from openai import AsyncOpenAI
+
+from bot import Bot, Default_Cog
 
 
 def split_response(response: str, max_length=1900):
