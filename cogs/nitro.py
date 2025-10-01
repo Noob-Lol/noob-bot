@@ -22,16 +22,16 @@ no_active_promo_str = f"There is no active nitro promotion. Check yourself: [Sup
 tz_map = {
     "PT": "US/Pacific", "PST": "US/Pacific", "PDT": "US/Pacific",
     "ET": "US/Eastern", "EST": "US/Eastern", "EDT": "US/Eastern",
-    "UTC": "UTC", "GMT": "GMT"
+    "UTC": "UTC", "GMT": "GMT",
 }
 
 
 class NitroCog(Default_Cog):
     def __init__(self, bot: Bot):
         super().__init__(bot)
-        self.nitro_usage = bot.db['nitro_usage']
-        self.eco = bot.db['economy']
-        self.embed_settings = bot.db['embed_settings']
+        self.nitro_usage = bot.db["nitro_usage"]
+        self.eco = bot.db["economy"]
+        self.embed_settings = bot.db["embed_settings"]
         self.scraper = cloudscraper.create_scraper()
         self.active_promo = False
         self.check_promos.start()
@@ -40,13 +40,13 @@ class NitroCog(Default_Cog):
     async def cog_load(self):
         # load variables in async
         self.embed_var = [doc async for doc in self.embed_settings.find()]
-        counter_ids = ['nitro_counter', 'nitro_limit', 'b1mult', 'b2mult', 'new_nitro_system', 'nitro_toggle']
-        results = await asyncio.gather(*[self.bot.counter.find_one({'_id': _id}) for _id in counter_ids])
+        counter_ids = ["nitro_counter", "nitro_limit", "b1mult", "b2mult", "new_nitro_system", "nitro_toggle"]
+        results = await asyncio.gather(*[self.bot.counter.find_one({"_id": _id}) for _id in counter_ids])
         # Map results to instance variables
         for _id, doc in zip(counter_ids, results):
-            value = doc.get('count', 0) if doc else 0
-            if _id in ['new_nitro_system', 'nitro_toggle']:
-                value = doc.get('state', True) if doc else True
+            value = doc.get("count", 0) if doc else 0
+            if _id in ["new_nitro_system", "nitro_toggle"]:
+                value = doc.get("state", True) if doc else True
             setattr(self, _id, value)
         if not self.nitro_toggle:
             self.logger.warning("Nitro commands are disabled.")
@@ -57,7 +57,7 @@ class NitroCog(Default_Cog):
         self.update_embed.start()
 
     def parse_date(self, text: str):
-        match = re.search(r'([A-Za-z]+\s+\d{1,2},\s+\d{4})\s+\((\d{1,2}:\d{2}[APMapm]{2})\s*([A-Z]{2,4})\)', text)
+        match = re.search(r"([A-Za-z]+\s+\d{1,2},\s+\d{4})\s+\((\d{1,2}:\d{2}[APMapm]{2})\s*([A-Z]{2,4})\)", text)
         if not match:
             raise ValueError(f"Unparsable datetime: {text}")
         date_part, time_part, tz_abbr = match.groups()
@@ -71,14 +71,14 @@ class NitroCog(Default_Cog):
         """Tries to find some active nitro promotion. Returns True on success."""
         base = "https://support.discord.com"
         html = scraper.get(promos_link).text
-        soup = BeautifulSoup(html, 'html.parser')
-        exclusions = {'customers', 'youtube', 'game pass ultimate'}
-        for a in soup.select('ul.article-list a.article-list-link'):
-            name, href = a.get_text(strip=True), str(a['href'])
+        soup = BeautifulSoup(html, "html.parser")
+        exclusions = {"customers", "youtube", "game pass ultimate"}
+        for a in soup.select("ul.article-list a.article-list-link"):
+            name, href = a.get_text(strip=True), str(a["href"])
             html = scraper.get(base + href).text
-            if 'Nitro promotion is free' in html and not any(ex in name.lower() for ex in exclusions):
-                soup = BeautifulSoup(html, 'html.parser')
-                strongs = soup.select('div.article-body p strong')
+            if "Nitro promotion is free" in html and not any(ex in name.lower() for ex in exclusions):
+                soup = BeautifulSoup(html, "html.parser")
+                strongs = soup.select("div.article-body p strong")
                 if len(strongs) < 2:
                     continue
                 try:
@@ -89,8 +89,8 @@ class NitroCog(Default_Cog):
                 now = datetime.datetime.now(datetime.timezone.utc)
                 is_active = start_date <= now <= end_date
                 if is_active:
-                    time_left = str(end_date - now).split('.')[0]
-                    return {'name': name, 'url': base + href, 'time_left': time_left}
+                    time_left = str(end_date - now).split(".")[0]
+                    return {"name": name, "url": base + href, "time_left": time_left}
         return False
 
     async def old_nitro_check(self, ctx: commands.Context, amount: int, user_id: int):
@@ -98,10 +98,10 @@ class NitroCog(Default_Cog):
         assert isinstance(ctx.guild, discord.Guild)
         # old nitro system
         today_dt = datetime.datetime.combine(datetime.date.today(), datetime.time(0, 0, 0))
-        result = await self.nitro_usage.find_one({'user_id': user_id, 'date': today_dt})
+        result = await self.nitro_usage.find_one({"user_id": user_id, "date": today_dt})
         limit = self.nitro_limit
         if result:
-            rcount = result['count']
+            rcount = result["count"]
             if not ctx.author.premium_since:
                 boost_count = 0
             else:
@@ -126,7 +126,7 @@ class NitroCog(Default_Cog):
                 amount = limit - rcount
         if amount > limit:
             amount = limit
-        await self.nitro_usage.update_one({'user_id': user_id, 'date': today_dt}, {'$inc': {'count': amount}}, upsert=True)
+        await self.nitro_usage.update_one({"user_id": user_id, "date": today_dt}, {"$inc": {"count": amount}}, upsert=True)
         return True
 
     @commands.hybrid_command(name="nitro", help="Sends a free nitro link")
@@ -135,8 +135,8 @@ class NitroCog(Default_Cog):
     @app_commands.choices(
         place=[
             app_commands.Choice(name="dm (default)", value="dm"),
-            app_commands.Choice(name="channel (here)", value="channel")
-        ]
+            app_commands.Choice(name="channel (here)", value="channel"),
+        ],
     )
     async def nitro(self, ctx: commands.Context, amount: int = p(desc1, 1), place: str = p(desc2, "dm")):
         if not self.nitro_toggle:
@@ -144,7 +144,7 @@ class NitroCog(Default_Cog):
         if not self.active_promo:
             return await self.bot.respond(ctx, no_active_promo_str)
         if self.bot.lock_exists():
-            return await self.bot.respond(ctx, 'The bot is in maintenance, please retry later.')
+            return await self.bot.respond(ctx, "The bot is in maintenance, please retry later.")
         if not isinstance(ctx.author, discord.Member) or not ctx.guild:
             return await ctx.send("You must use this command in a server.")
         place = place.lower()
@@ -170,17 +170,17 @@ class NitroCog(Default_Cog):
             else:
                 user_id = ctx.author.id
                 if self.new_nitro_system:
-                    user = await self.eco.find_one({'_id': user_id})
+                    user = await self.eco.find_one({"_id": user_id})
                     if not user:
-                        return await ctx.send("You are not in database. (no nitro credits)")
-                    if user['balance'] < amount:
-                        return await ctx.send(f"You don't have enough nitro credits. {user['balance']:g}/{amount}.")
-                    await self.eco.update_one({'_id': user_id}, {'$inc': {'balance': -amount}})
+                        return await ctx.send(f"You are not in database. (no {self.bot.currency})")
+                    if user["balance"] < amount:
+                        return await ctx.send(f"You don't have enough {self.bot.currency}. {user['balance']:g}/{amount}.")
+                    await self.eco.update_one({"_id": user_id}, {"$inc": {"balance": -amount}})
                 else:
                     result = await self.old_nitro_check(ctx, amount, user_id)
                     if result is not True:
                         return
-            lines = await self.bot.get_lines(amount, 'nitro.txt')
+            lines = await self.bot.get_lines(amount, "nitro.txt")
             if lines is None:
                 return await ctx.send("There was an error getting the codes.")
             if amount > 1:
@@ -188,19 +188,19 @@ class NitroCog(Default_Cog):
                 count = 0
                 for line in lines:
                     if line:
-                        if 'https://' in line:
-                            line = line.split('https://')[1]
+                        if "https://" in line:
+                            line = line.split("https://")[1]
                         codes.append(line)
                         count += 1
                         if count == amount:
                             break
                     else:
                         break
-                await self.bot.counter.update_one({'_id': 'nitro_counter'}, {'$inc': {'count': count}}, upsert=True)
+                await self.bot.counter.update_one({"_id": "nitro_counter"}, {"$inc": {"count": count}}, upsert=True)
                 self.nitro_counter += count
-                codes = '\n'.join(codes)
-                await self.bot.log_to_file(f'{ctx.author.name} got {count} nitro codes: {codes}', 'nitro_log.txt')
-                codes = f'```\n{codes}```'
+                codes = "\n".join(codes)
+                await self.bot.log_to_file(f"{ctx.author.name} got {count} nitro codes: {codes}", "nitro_log.txt")
+                codes = f"```\n{codes}```"
                 if place == "dm":
                     try:
                         if ctx.author.dm_channel is None:
@@ -214,12 +214,12 @@ class NitroCog(Default_Cog):
                     await ctx.send(codes)
             else:
                 first_line = lines[0].strip()
-                await self.bot.counter.update_one({'_id': 'nitro_counter'}, {'$inc': {'count': 1}}, upsert=True)
+                await self.bot.counter.update_one({"_id": "nitro_counter"}, {"$inc": {"count": 1}}, upsert=True)
                 self.nitro_counter += 1
-                await self.bot.log_to_file(f'{ctx.author.name} got nitro code: {first_line}', 'nitro_log.txt')
-                if 'https://' in first_line:
-                    first_line = first_line.split('https://')[1]
-                code = f'```{first_line}```'
+                await self.bot.log_to_file(f"{ctx.author.name} got nitro code: {first_line}", "nitro_log.txt")
+                if "https://" in first_line:
+                    first_line = first_line.split("https://")[1]
+                code = f"```{first_line}```"
                 if place == "dm":
                     try:
                         if ctx.author.dm_channel is None:
@@ -231,14 +231,14 @@ class NitroCog(Default_Cog):
                 else:
                     await ctx.send(code)
         except Exception as e:
-            self.logger.exception(f'Nitro error: {e}')
+            self.logger.exception(f"Nitro error: {e}")
             await ctx.send("An error occurred while processing your request.")
 
     @nitro.error
     async def nitro_error(self, ctx, error):
         if isinstance(error, commands.BadArgument):
             amount = ctx.message.content.split()[1]
-            if amount == 'dm':
+            if amount == "dm":
                 await ctx.send("Wrong format. Usage: >nitro [amount] [dm/channel]")
             elif not amount.isdigit():
                 await ctx.send("Amount must be an integer.")
@@ -260,7 +260,7 @@ class NitroCog(Default_Cog):
             self.b2mult = amount
         else:
             self.nitro_limit = amount
-        await self.bot.counter.update_one({'_id': limit}, {'$set': {'count': amount}}, upsert=True)
+        await self.bot.counter.update_one({"_id": limit}, {"$set": {"count": amount}}, upsert=True)
         await self.bot.respond(ctx, f"Updated {limit} to {amount}.", False)
 
     @commands.hybrid_command(name="what", help="View nitro limit.")
@@ -270,7 +270,7 @@ class NitroCog(Default_Cog):
         elif not self.active_promo:
             return await self.bot.respond(ctx, no_active_promo_str)
         elif self.new_nitro_system:
-            return await self.bot.respond(ctx, "1 promo = 1 nitro credit", False, del_cmd=False)
+            return await self.bot.respond(ctx, f"1 promo = 1 {self.bot.currency}", False, del_cmd=False)
         limit_str = f"Current nitro limit (daily): {self.nitro_limit}, 1 boost = x{self.b1mult}, 2 boosts = x{self.b2mult}"
         await self.bot.respond(ctx, limit_str, False, del_cmd=False)
 
@@ -286,11 +286,11 @@ class NitroCog(Default_Cog):
         member = ctx.author
         today_dt = datetime.datetime.combine(datetime.date.today(), datetime.time(0, 0, 0))
         user_id = member.id
-        result = await self.nitro_usage.find_one({'user_id': user_id, 'date': today_dt})
+        result = await self.nitro_usage.find_one({"user_id": user_id, "date": today_dt})
         if not result:
             result = {}
-            result['count'] = 0
-        count = result['count']
+            result["count"] = 0
+        count = result["count"]
 
         def count_usage():
             """Returns the "Your usage is count/limit" string, calculated."""
@@ -302,10 +302,10 @@ class NitroCog(Default_Cog):
                 mult = self.b2mult
             elif boost_count > 2:
                 mult = self.b2mult
-                return f"There are no more perks after 2 boosts. Your usage is {count}/{self.nitro_limit*mult}."
+                return f"There are no more perks after 2 boosts. Your usage is {count}/{self.nitro_limit * mult}."
             else:
                 mult = 1
-            return f"Your usage is {count}/{self.nitro_limit*mult}."
+            return f"Your usage is {count}/{self.nitro_limit * mult}."
         boost_count = 0
         if member.premium_since:
             boost_count = await self.bot.check_boost(ctx.guild.id, member.id)
@@ -323,7 +323,7 @@ class NitroCog(Default_Cog):
     @tasks.loop(hours=24)
     async def cleanup_old_usage(self):
         today_dt = datetime.datetime.combine(datetime.date.today() - datetime.timedelta(days=1), datetime.time(0, 0, 0))
-        await self.nitro_usage.delete_many({'date': {'$lt': today_dt}})
+        await self.nitro_usage.delete_many({"date": {"$lt": today_dt}})
 
     @tasks.loop(hours=2)
     async def check_promos(self):
@@ -343,7 +343,7 @@ class NitroCog(Default_Cog):
             return await self.bot.respond(ctx, "active_promo is not a dict.")
         await ctx.send(
             f"**Found an Active Free Nitro Promo!**\nName: {self.active_promo['name']}\n"
-            f"Link: {self.active_promo['url']}\nTime left: {self.active_promo['time_left']}"
+            f"Link: {self.active_promo['url']}\nTime left: {self.active_promo['time_left']}",
             )
 
     @tasks.loop(minutes=5)
@@ -352,7 +352,7 @@ class NitroCog(Default_Cog):
         try:
             if self.nitro_toggle:
                 if self.active_promo:
-                    nitro_count = await self.bot.count_lines('nitro.txt')
+                    nitro_count = await self.bot.count_lines("nitro.txt")
                     if nitro_count is None:
                         nitro_count = "Error"
                 else:
@@ -363,9 +363,9 @@ class NitroCog(Default_Cog):
             guild_count, user_count = len(self.bot.guilds), len(self.bot.users)
             title, desc = "Bot Status", "Online 24/7, hosted somewhere..."
             for setting in self.embed_var:
-                guild_id = setting['guild_id']
-                channel_id = setting['channel_id']
-                message_id = setting['message_id']
+                guild_id = setting["guild_id"]
+                channel_id = setting["channel_id"]
+                message_id = setting["message_id"]
                 channel = self.bot.get_channel(channel_id)
                 if channel and isinstance(channel, discord.TextChannel):
                     ts = datetime.datetime.now()
@@ -384,7 +384,7 @@ class NitroCog(Default_Cog):
                     if "beta" not in str(self.bot.user).lower():
                         self.logger.warning(f"Bot does not have access to {channel_id}")
         except discord.NotFound:
-            await self.embed_settings.delete_one({'guild_id': guild_id})
+            await self.embed_settings.delete_one({"guild_id": guild_id})
             self.embed_var.remove(setting)
         except Exception as e:
             self.logger.exception(f"Failed to update embed: {e}")
@@ -392,47 +392,47 @@ class NitroCog(Default_Cog):
     @commands.command(name="embe", help="Enable embed updates in the current channel.")
     @commands.is_owner()
     async def enable_embed(self, ctx):
-        existing_entry = await self.embed_settings.find_one({'guild_id': ctx.guild.id})
+        existing_entry = await self.embed_settings.find_one({"guild_id": ctx.guild.id})
         if existing_entry:
             return await self.bot.respond(ctx, "Embed updates are already enabled in this channel.")
         embed = discord.Embed(title="Enabled embed updates", description="Waiting for update.", color=discord.Color.green())
         message = await ctx.send(embed=embed)
         await self.embed_settings.insert_one({
-            'guild_id': ctx.guild.id,
-            'channel_id': ctx.channel.id,
-            'message_id': message.id
+            "guild_id": ctx.guild.id,
+            "channel_id": ctx.channel.id,
+            "message_id": message.id,
         })
-        self.embed_var.append({'guild_id': ctx.guild.id, 'channel_id': ctx.channel.id, 'message_id': message.id})
+        self.embed_var.append({"guild_id": ctx.guild.id, "channel_id": ctx.channel.id, "message_id": message.id})
         await self.bot.respond(ctx, f"Embed updates enabled in {ctx.channel.mention}!")
 
     @commands.hybrid_command(name="embd", help="Disable embed updates in the current channel.")
     @commands.is_owner()
     async def disable_embed(self, ctx):
-        existing_entry = await self.embed_settings.find_one({'guild_id': ctx.guild.id})
+        existing_entry = await self.embed_settings.find_one({"guild_id": ctx.guild.id})
         if not existing_entry:
             return await self.bot.respond(ctx, "Embed updates are not enabled in this channel.")
         try:
-            message = await ctx.channel.fetch_message(existing_entry['message_id'])
+            message = await ctx.channel.fetch_message(existing_entry["message_id"])
             await message.delete()
         except Exception as e:
             self.logger.exception(f"Failed to delete or fetch embed, ignoring: {e}")
-        await self.embed_settings.delete_one({'guild_id': ctx.guild.id})
-        for i in self.embed_var:
-            if i['channel_id'] == ctx.channel.id:
+        await self.embed_settings.delete_one({"guild_id": ctx.guild.id})
+        for i in self.embed_var[:]:
+            if i["channel_id"] == ctx.channel.id:
                 self.embed_var.remove(i)
         await self.bot.respond(ctx, f"Embed updates disabled in {ctx.channel.mention}.")
 
-    @commands.hybrid_command(name='nitrotoggle', help='Toggle nitro related commands.')
+    @commands.hybrid_command(name="nitrotoggle", help="Toggle nitro related commands.")
     @commands.is_owner()
     async def toggle_nitro(self, ctx, choice=None):
         if choice is None:
             self.nitro_toggle = not self.nitro_toggle
-            await self.bot.counter.update_one({'_id': 'nitro_toggle'}, {'$set': {'state': self.nitro_toggle}}, upsert=True)
+            await self.bot.counter.update_one({"_id": "nitro_toggle"}, {"$set": {"state": self.nitro_toggle}}, upsert=True)
             await self.bot.respond(ctx, f"Nitro commands {'enabled' if self.nitro_toggle else 'disabled'}")
             return
         # toggle the new nitro system
         self.new_nitro_system = not self.new_nitro_system
-        await self.bot.counter.update_one({'_id': 'new_nitro_system'}, {'$set': {'state': self.new_nitro_system}}, upsert=True)
+        await self.bot.counter.update_one({"_id": "new_nitro_system"}, {"$set": {"state": self.new_nitro_system}}, upsert=True)
         await self.bot.respond(ctx, f"New nitro system {'enabled' if self.new_nitro_system else 'disabled'}")
 
 

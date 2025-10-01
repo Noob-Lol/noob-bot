@@ -1,6 +1,5 @@
 import datetime
 import secrets
-# import random
 
 import discord
 from discord.ext import commands, tasks
@@ -19,19 +18,19 @@ class EconomyCog(Default_Cog):
         self.logger.info(f"Dashboard link: {self.dash_url}")
         self.cleanup_old_farm.start()
 
-    @commands.hybrid_command(name="farm", help="Gives some nitro credits")
+    @commands.hybrid_command(name="farm", help="Gives some noob credits")
     @commands.cooldown(1, 10, commands.BucketType.user)
     async def farm(self, ctx: commands.Context):
         today_dt = datetime.datetime.combine(datetime.date.today(), datetime.time(0, 0, 0))
         user_id = ctx.author.id
-        result = await self.farm_usage.find_one({'_id': user_id})
+        result = await self.farm_usage.find_one({"_id": user_id})
         if result:
-            last_farm = result['last_farm']
+            last_farm = result["last_farm"]
             if last_farm >= today_dt:
                 return await ctx.send("You have already farmed today.")
-            await self.farm_usage.update_one({'_id': user_id}, {'$set': {'last_farm': today_dt}})
+            await self.farm_usage.update_one({"_id": user_id}, {"$set": {"last_farm": today_dt}})
         else:
-            await self.farm_usage.insert_one({'_id': user_id, 'last_farm': today_dt})
+            await self.farm_usage.insert_one({"_id": user_id, "last_farm": today_dt})
         amount = 0.5
         user = await self.eco.find_one({"_id": user_id})
         if user:
@@ -42,7 +41,7 @@ class EconomyCog(Default_Cog):
         else:
             new_bal = amount
             await self.eco.insert_one({"_id": user_id, "balance": new_bal})
-        await ctx.send(f"{ctx.author.mention}, you have been given {amount:g} nitro credits! Your new balance is {new_bal:g}.")
+        await ctx.send(f"{ctx.author.mention}, you have been given {amount:g} {self.bot.currency}! Your new balance is {new_bal:g}.")
 
     @commands.hybrid_command(name="dash", help="Get your personal dashboard link")
     async def dashboard(self, ctx: commands.Context):
@@ -55,12 +54,12 @@ class EconomyCog(Default_Cog):
         await self.auth_tokens_coll.insert_one({
             "_id": token,
             "discord_id": discord_id,
-            "created_at": datetime.datetime.now(datetime.timezone.utc)
+            "created_at": datetime.datetime.now(datetime.timezone.utc),
         })
         url = f"{self.dash_url}/{token}"
         await self.bot.respond(ctx, f"Here is your dashboard link: [Click](<{url}>)")
 
-    @commands.hybrid_command(name="give", help="Gives nitro credits to another user")
+    @commands.hybrid_command(name="give", help="Gives noob credits to another user")
     @commands.cooldown(1, 10, commands.BucketType.user)
     async def give(self, ctx: commands.Context, user: discord.User, amount: float):
         if amount < 1:
@@ -68,9 +67,9 @@ class EconomyCog(Default_Cog):
         author = ctx.author
         author_data = await self.eco.find_one({"_id": author.id})
         if not author_data:
-            return await ctx.send("You don't have any nitro credits.")
+            return await ctx.send(f"You don't have any {self.bot.currency}.")
         if author_data["balance"] < amount:
-            return await ctx.send("You don't have enough nitro credits to give.")
+            return await ctx.send(f"You don't have enough {self.bot.currency} to give.")
         user_id = user.id
         user_data = await self.eco.find_one({"_id": user_id})
         if user_data:
@@ -80,14 +79,21 @@ class EconomyCog(Default_Cog):
             new_bal = amount
             await self.eco.insert_one({"_id": user_id, "balance": new_bal})
         await self.eco.update_one({"_id": author.id}, {"$inc": {"balance": -amount}})
-        await ctx.send(f"**{author.name}** gave **{user.name}** {amount:g} nitro credits. Their new balance is {new_bal:g}.")
+        await ctx.send(f"**{author.name}** gave **{user.name}** {amount:g} {self.bot.currency}. Their new balance is {new_bal:g}.")
 
-    @commands.hybrid_command(name="set_balance", help="Sets the user's nitro credits to a specific amount")
+    @commands.hybrid_command(name="set_balance", help="Sets the user's balance to a specific amount")
     @commands.has_permissions(administrator=True)
     async def set_balance(self, ctx, user: discord.User, amount: float):
         user_id = user.id
         await self.eco.update_one({"_id": user_id}, {"$set": {"balance": amount}}, upsert=True)
         await self.bot.respond(ctx, f"{user.name}'s balance has been set to {amount}.")
+
+    @commands.hybrid_command(name="remove_user", help="Removes a user from the economy database")
+    @commands.has_permissions(administrator=True)
+    async def remove_user(self, ctx, user: discord.User):
+        user_id = user.id
+        await self.eco.delete_one({"_id": user_id})
+        await self.bot.respond(ctx, f"{user.name}'s data has been removed from the database.")
 
     @commands.hybrid_command(name="balance", help="Displays your current balance")
     async def balance(self, ctx):
@@ -96,7 +102,7 @@ class EconomyCog(Default_Cog):
         if user:
             balance = user["balance"]
         else:
-            return await ctx.send("You are not in database. (no nitro credits)")
+            return await ctx.send(f"You are not in database. (no {self.bot.currency})")
         await ctx.send(f"{ctx.author.mention}, your current balance is {balance:g}.")
 
     @commands.hybrid_command(name="leaderboard", help="Displays the leaderboard of top users")
@@ -105,34 +111,32 @@ class EconomyCog(Default_Cog):
         await ctx.defer(ephemeral=True)
         if not ctx.guild:
             return await ctx.send("This command can only be used in a guild.")
-        users = await self.eco.find({}).to_list(length=100)
-        this_guild = []
-        for user in users:
-            user_id = user["_id"]
-            member = ctx.guild.get_member(user_id)
-            if member:
-                user["member"] = member
-                this_guild.append(user)
-        leaderboard = sorted(this_guild, key=lambda x: x.get("balance", 0), reverse=True)
+        guild_members = {member.id: member for member in ctx.guild.members}
+        users = await self.eco.find({"_id": {"$in": list(guild_members.keys())}}).to_list(length=100)
+        leaderboard = sorted(
+            [user for user in users if user.get("balance", 0) > 0],
+            key=lambda x: x["balance"],
+            reverse=True,
+        )
         if not leaderboard:
-            await ctx.send("No users found in the economy system.")
-            return
-        page_size, current_page = 5, 0
-        total_pages = (len(leaderboard) // page_size) + (1 if len(leaderboard) % page_size > 0 else 0)
+            return await ctx.send("No users with balance found in this server.")
+        page_size = 5
+        total_pages = max(1, (len(leaderboard) + page_size - 1) // page_size)
+        current_page = 0
 
         def build_embed(page: int):
             start = page * page_size
             end = start + page_size
             page_data = leaderboard[start:end]
             embed = discord.Embed(title="🏆 **Leaderboard** 🏆", description="Top Users:", color=discord.Color.yellow())
-            for index, user in enumerate(page_data, start=start+1):
-                member = user["member"]
+            for index, user in enumerate(page_data, start=start + 1):
+                member = guild_members[user["_id"]]
                 balance = user["balance"]
                 if balance == 0:
                     continue
                 username = member.name
                 embed.add_field(name=f"{index}. {username}", value=f"{balance:g} nitro credits", inline=False)
-            embed.set_footer(text=f"Page {page+1}/{total_pages}, timeouts in 60 seconds")
+            embed.set_footer(text=f"Page {page + 1}/{total_pages}, timeouts in 60 seconds")
             return embed
 
         async def update_embed(interaction: discord.Interaction, page):
@@ -144,14 +148,12 @@ class EconomyCog(Default_Cog):
 
             async def prev_callback(interaction):
                 nonlocal current_page
-                if current_page > 0:
-                    current_page -= 1
+                current_page -= 1
                 await update_embed(interaction, current_page)
 
             async def next_callback(interaction):
                 nonlocal current_page
-                if current_page < total_pages - 1:
-                    current_page += 1
+                current_page += 1
                 await update_embed(interaction, current_page)
             prev_button.callback, next_button.callback = prev_callback, next_callback
             return View(timeout=60).add_item(prev_button).add_item(next_button)
@@ -160,7 +162,7 @@ class EconomyCog(Default_Cog):
     @tasks.loop(hours=24)
     async def cleanup_old_farm(self):
         today_dt = datetime.datetime.combine(datetime.date.today() - datetime.timedelta(days=1), datetime.time(0, 0, 0))
-        await self.farm_usage.delete_many({'last_farm': {'$lt': today_dt}})
+        await self.farm_usage.delete_many({"last_farm": {"$lt": today_dt}})
 
 
 async def setup(bot: Bot):

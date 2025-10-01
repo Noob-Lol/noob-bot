@@ -29,8 +29,8 @@ def split_response(response: str, max_length=1900):
 class FunCog(Default_Cog):
     def __init__(self, bot: Bot):
         super().__init__(bot)
-        self.hf_token = os.environ['HF_TOKEN']
-        self.client = AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=os.environ['OR_TOKEN'])
+        self.hf_token = os.environ["HF_TOKEN"]
+        self.client = AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=os.environ["OR_TOKEN"])
         self.merged = self.dev = self.schnell = None
 
     async def cog_load(self):
@@ -40,7 +40,7 @@ class FunCog(Default_Cog):
         models = {
             "multimodalart/FLUX.1-merged": "merged",
             "black-forest-labs/FLUX.1-dev": "dev",
-            "black-forest-labs/FLUX.1-schnell": "schnell"
+            "black-forest-labs/FLUX.1-schnell": "schnell",
         }
         for model, name in models.items():
             self.bot.loop.run_in_executor(None, self.load_one, model, name)
@@ -50,7 +50,7 @@ class FunCog(Default_Cog):
             model = Client(model_name, self.hf_token, verbose=False)
             setattr(self, var_name, model)
         except Exception as e:
-            self.logger.error(f'Model {model_name} failed to load: {e}')
+            self.logger.error(f"Model {model_name} failed to load: {e}")
             setattr(self, var_name, None)
 
     @commands.hybrid_command(name="cat", help="Sends a random cat image")
@@ -77,7 +77,7 @@ class FunCog(Default_Cog):
 
     @commands.hybrid_command(name="joke", help="Sends a random joke")
     async def joke(self, ctx):
-        flags = 'nsfw,religious,political,racist,sexist,explicit'
+        flags = "nsfw,religious,political,racist,sexist,explicit"
         response = await self.bot.session.get(f"https://v2.jokeapi.dev/joke/Any?blacklistFlags={flags}")
         joke = await response.json()
         if joke["type"] == "single":
@@ -104,37 +104,37 @@ class FunCog(Default_Cog):
                                 {
                                     "type": "text",
                                     "text": "You are a helpful Discord bot. Keep your answers short and to the point."
-                                    "Free nitro is real only if its from official Discord promotion."
+                                    "Free nitro is real only if its from official Discord promotion.",
                                 },
                                 {
                                     "type": "text",
-                                    "text": f"{prompt}"
+                                    "text": f"{prompt}",
                                 },
                                 ]}])
                 except Exception as e:
-                    self.logger.exception(f'Error in ai_chat command while creating completion: {e}')
+                    self.logger.exception(f"Error in ai_chat command while creating completion: {e}")
                     return await ctx.reply("Something went wrong, please try again later")
                 msg = completion.choices[0].message.content
                 if not msg:
-                    self.logger.error('Empty response from ai_chat command')
+                    self.logger.error("Empty response from ai_chat command")
                     return await ctx.reply("Something went wrong, please try again later")
                 chunks = split_response(msg)
                 for chunk in chunks:
                     await ctx.reply(chunk)
         except Exception as e:
-            self.logger.exception(f'Error in ai_chat command: {e}')
+            self.logger.exception(f"Error in ai_chat command: {e}")
 
     @commands.hybrid_command(name="image", help="Generates an image")
     @commands.cooldown(1, 30, commands.BucketType.user)
     @app_commands.describe(
         prompt="A prompt for the image", seed="default=random", width="default=1024", height="default=1024",
-        guidance_scale="default=3.5, not used by schnell", steps="default=4", model="default=schnell"
+        guidance_scale="default=3.5, not used by schnell", steps="default=4", model="default=schnell",
         )
     @app_commands.choices(
         model=[
             app_commands.Choice(name="schnell", value="schnell"),
             app_commands.Choice(name="merged", value="merged"),
-            app_commands.Choice(name="dev", value="dev")
+            app_commands.Choice(name="dev", value="dev"),
         ])
     async def image(self, ctx: commands.Context, *, prompt: str, seed: int = 0, width: int = 1024, height: int = 1024,
                     guidance_scale: float = 3.5, steps: int = 4, model: str = "schnell"):
@@ -144,9 +144,9 @@ class FunCog(Default_Cog):
             rand = False
         arg_names = ["prompt", "seed", None, "width", "height", "guidance_scale", "steps"]
         args = [prompt, seed, rand, width, height, guidance_scale, steps]
-        log_args = ', '.join(f"{name}: {value}" for name, value in zip(arg_names, args) if name is not None)
+        log_args = ", ".join(f"{name}: {value}" for name, value in zip(arg_names, args) if name is not None)
         # i will manually ban users who type something offensive
-        await self.bot.log_to_file(f'{ctx.author}, {log_args}, model: {model}', "log.txt")
+        await self.bot.log_to_file(f"{ctx.author}, {log_args}, model: {model}", "log.txt")
         start_time = time.time()
         if self.dev and model == "dev":
             result = await self.bot.loop.run_in_executor(None, self.dev.predict, *args, "/infer")
@@ -160,7 +160,7 @@ class FunCog(Default_Cog):
         image_path, seed = result
         if os.path.exists(image_path):
             gen_time = time.time() - start_time
-            await ctx.send(f'Generated image in {gen_time:.2f} seconds, seed: {seed}', file=discord.File(image_path))
+            await ctx.send(f"Generated image in {gen_time:.2f} seconds, seed: {seed}", file=discord.File(image_path))
             try:
                 os.remove(image_path)
                 folder = os.path.dirname(image_path)

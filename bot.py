@@ -13,34 +13,34 @@ from discord import app_commands
 from discord.ext import commands
 from pymongo import AsyncMongoClient
 
-if os.name == 'nt' and not os.getenv('WT_SESSION'):
+if os.name == "nt" and not os.getenv("WT_SESSION"):
     try:
         # this fixes logger colors on windows
         from colorama import just_fix_windows_console
         just_fix_windows_console()
-        os.environ['WT_SESSION'] = 'bruh'
+        os.environ["WT_SESSION"] = "bruh"
     except ImportError:
         pass
-bot_name = 'noob_bot'
-logging.getLogger('discord').setLevel(logging.INFO)
-my_loggers = [bot_name, 'bot']
+bot_name = "noob_bot"
+logging.getLogger("discord").setLevel(logging.INFO)
+my_loggers = [bot_name, "bot"]
 for logger in my_loggers:
     logging.getLogger(logger).setLevel(logging.INFO)
 dotenv.load_dotenv()
 script_path = os.path.dirname(__file__)
-TOKEN = os.environ['TOKEN']
-RTOKEN = os.getenv('RTOKEN')
-PTOKEN = os.getenv('PTOKEN')
-LOCAL_STORAGE = True if os.getenv('LOCAL_STORAGE') == 'True' else False
-folder = 'DiscordBotData'
+TOKEN = os.environ["TOKEN"]
+RTOKEN = os.getenv("RTOKEN")
+PTOKEN = os.getenv("PTOKEN")
+LOCAL_STORAGE = True if os.getenv("LOCAL_STORAGE") == "True" else False
+folder = "DiscordBotData"
 pcloud = AsyncPyCloud(PTOKEN, folder=folder)
-uri = os.environ['MONGODB_URI']
+uri = os.environ["MONGODB_URI"]
 client = AsyncMongoClient(uri)
-db = client['discord_bot']
-counter = db['counter']
-unloaded_coll = db['unloaded_cogs']
-disabled_coll = db['disabled_channels']
-disabled_com_coll = db['disabled_commands']
+db = client["discord_bot"]
+counter = db["counter"]
+unloaded_coll = db["unloaded_cogs"]
+disabled_coll = db["disabled_channels"]
+disabled_com_coll = db["disabled_commands"]
 
 
 class Bot(commands.Bot):
@@ -52,6 +52,7 @@ class Bot(commands.Bot):
         self.counter = counter
         self.react = False
         self.file_lock = asyncio.Lock()
+        self.currency = "noob credits"
 
     @property
     def logger(self):
@@ -59,13 +60,13 @@ class Bot(commands.Bot):
         stack = inspect.stack()
         for frame_info in stack[1:]:
             func_name = frame_info.function
-            if func_name == 'logger':
+            if func_name == "logger":
                 continue
-            self_obj = frame_info.frame.f_locals.get('self')
+            self_obj = frame_info.frame.f_locals.get("self")
             cls_name = self_obj.__class__.__name__.lower()
-            if self_obj and cls_name != 'bot':
-                return logging.getLogger(f'bot.{cls_name}.{func_name}')
-            return logging.getLogger(f'{bot_name}.{func_name}')
+            if self_obj and cls_name != "bot":
+                return logging.getLogger(f"bot.{cls_name}.{func_name}")
+            return logging.getLogger(f"{bot_name}.{func_name}")
         return logging.getLogger(bot_name)
 
     # bot events
@@ -73,21 +74,21 @@ class Bot(commands.Bot):
         await pcloud.connect()
         self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(7), raise_for_status=True)
         global unloaded_cogs, disabled_channels, disabled_commands
-        unloaded_cogs = {cog['cog'] async for cog in unloaded_coll.find()}
-        disabled_channels = {channel['_id'] async for channel in disabled_coll.find()}
-        disabled_commands = {command['command'] async for command in disabled_com_coll.find()}
-        cogs = [filename[:-3] for filename in os.listdir(f'{script_path}/cogs') if filename.endswith('.py')]
+        unloaded_cogs = {cog["cog"] async for cog in unloaded_coll.find()}
+        disabled_channels = {channel["_id"] async for channel in disabled_coll.find()}
+        disabled_commands = {command["command"] async for command in disabled_com_coll.find()}
+        cogs = [filename[:-3] for filename in os.listdir(f"{script_path}/cogs") if filename.endswith(".py")]
         for cog_name in cogs:
             if cog_name in unloaded_cogs:
                 continue
             try:
-                await self.load_extension(f'cogs.{cog_name}')
+                await self.load_extension(f"cogs.{cog_name}")
             except commands.ExtensionAlreadyLoaded:
                 pass
         disabled_commands_list = [self.get_command(cmd) for cmd in disabled_commands if self.get_command(cmd)]
         for command in disabled_commands_list:
             if command:
-                self.logger.info(f'Disabling command: {command.name}')
+                self.logger.info(f"Disabling command: {command.name}")
                 command.enabled = False
         app = web.Application()
 
@@ -97,27 +98,27 @@ class Bot(commands.Bot):
 
         async def web_status(_):
             return web.Response(text=f"Bot is running as {self.user}, {count_values()}")
-        app.router.add_get('/', web_status)
+        app.router.add_get("/", web_status)
         runner = web.AppRunner(app)
         await runner.setup()
-        host, port = '0.0.0.0', os.getenv('SERVER_PORT') or os.getenv('PORT') or 8000
+        host, port = "0.0.0.0", os.getenv("SERVER_PORT") or os.getenv("PORT") or 8000
         try:
             await web.TCPSite(runner, host, int(port)).start()
         except OSError:
-            self.logger.error(f'Port {port} is already in use')
+            self.logger.error(f"Port {port} is already in use")
 
     async def on_ready(self):
         await self.change_presence(activity=discord.CustomActivity(name='im cool 😎, ">" prefix'))
-        self.logger.info(f'Logged in as {self.user}')
+        self.logger.info(f"Logged in as {self.user}")
 
     async def on_message(self, message: discord.Message):
         if message.author == self.user:
             return
-        if '>nitro' in message.content.lower():
+        if ">nitro" in message.content.lower():
             if not self.react:
                 pass
             else:
-                await message.add_reaction('☠️')
+                await message.add_reaction("☠️")
         await self.process_commands(message)
 
     async def on_command(self, ctx: commands.Context):
@@ -125,10 +126,10 @@ class Bot(commands.Bot):
             ctx.command.reset_cooldown(ctx)
 
     async def on_command_error(self, ctx: commands.Context, error):
-        if hasattr(ctx.command, 'on_error') and not hasattr(ctx, 'unhandled_error'):
+        if hasattr(ctx.command, "on_error") and not hasattr(ctx, "unhandled_error"):
             return
-        ignored = (commands.CommandNotFound, app_commands.errors.CommandNotFound, )
-        error = getattr(error, 'original', error)
+        ignored = (commands.CommandNotFound, app_commands.errors.CommandNotFound)
+        error = getattr(error, "original", error)
         if isinstance(error, ignored):
             return
         if isinstance(error, commands.CheckFailure):
@@ -145,14 +146,14 @@ class Bot(commands.Bot):
         elif isinstance(error, (discord.NotFound, discord.Forbidden)):
             self.logger.exception(error, exc_info=error)
         else:
-            self.logger.exception(f'Ignoring exception in command {ctx.command}:', exc_info=error)
+            self.logger.exception(f"Ignoring exception in command {ctx.command}:", exc_info=error)
             await ctx.send(f"Exception in command {ctx.command}: {str(error)}", ephemeral=True)
 
     async def close(self):
         await super().close()
         await self.session.close()
         await pcloud.disconnect()
-        self.logger.info('Stopped.')
+        self.logger.info("Stopped.")
         await client.aclose()
 
     # custom functions
@@ -160,37 +161,37 @@ class Bot(commands.Bot):
         """Download file content from pCloud and return as text.
         not_found_ok=True will not raise an exception if the file is not found."""
         if LOCAL_STORAGE:
-            if not os.path.exists(f'{script_path}/{file}'):
+            if not os.path.exists(f"{script_path}/{file}"):
                 if not_found_ok:
-                    return ''
+                    return ""
                 raise Exception("Not found in local storage.")
-            async with aiofiles.open(f'{script_path}/{file}') as f:
+            async with aiofiles.open(f"{script_path}/{file}") as f:
                 return await f.read()
         file_text = await pcloud.gettextfile(not_found_ok, path=file)
         if file_text is None:
             if not_found_ok:
-                return ''
+                return ""
             raise Exception(f"Not found in folder '{folder}'.")
         return file_text
 
     async def upload_file(self, filename: str, content: str):
         """Upload content to a file in pCloud. Or write to file."""
         if LOCAL_STORAGE:
-            async with aiofiles.open(f'{script_path}/{filename}', 'w') as f:
+            async with aiofiles.open(f"{script_path}/{filename}", "w") as f:
                 await f.write(content)
             return
-        r = await pcloud.upload_one_file(filename, content, path='/')
-        if r.get('error'):
-            raise Exception(r['error'])
+        r = await pcloud.upload_one_file(filename, content, path="/")
+        if r.get("error"):
+            raise Exception(r["error"])
 
     async def log_to_file(self, text: str, file: str):
         try:
             async with self.file_lock:
                 rtext = await self.download_file(file, True)
-                content = rtext + text + '\n'
+                content = rtext + text + "\n"
                 await self.upload_file(file, content)
         except Exception as e:
-            self.logger.exception(f'Error for {file}: {e}')
+            self.logger.exception(f"Error for {file}: {e}")
 
     async def get_lines(self, num_lines: int, file: str):
         try:
@@ -206,7 +207,7 @@ class Bot(commands.Bot):
                 await self.upload_file(file, content)
                 return lines_list
         except Exception as e:
-            self.logger.exception(f'Error for {file}: {e}')
+            self.logger.exception(f"Error for {file}: {e}")
 
     async def count_lines(self, file: str):
         try:
@@ -214,30 +215,30 @@ class Bot(commands.Bot):
                 text = await self.download_file(file)
                 return len(text.splitlines())
         except Exception as e:
-            self.logger.exception(f'Error for {file}: {e}')
+            self.logger.exception(f"Error for {file}: {e}")
 
     async def check_boost(self, guild_id: int, member_id: int):
         try:
             if not RTOKEN:
-                raise Exception('RTOKEN not found.')
-            url = f'https://discord.com/api/v10/guilds/{guild_id}/premium/subscriptions'
-            response = await self.session.get(url, headers={'authorization': RTOKEN})
+                raise Exception("RTOKEN not found.")
+            url = f"https://discord.com/api/v10/guilds/{guild_id}/premium/subscriptions"
+            response = await self.session.get(url, headers={"authorization": RTOKEN})
             if response.status != 200:
-                self.logger.error(f'Error getting boost count for guild {guild_id}: {response.status}')
+                self.logger.error(f"Error getting boost count for guild {guild_id}: {response.status}")
                 return False
             response = await response.json()
             if isinstance(response, list):
                 boost_count = 0
                 for boost in response:
-                    user_id = boost['user']['id']
+                    user_id = boost["user"]["id"]
                     if int(user_id) == member_id:
                         boost_count += 1
                 return boost_count
             else:
-                self.logger.error(f'Error getting boost count for user {member_id}: {response}')
+                self.logger.error(f"Error getting boost count for user {member_id}: {response}")
                 return False
         except Exception as e:
-            self.logger.error(f'Error checking boost for guild {guild_id}, member {member_id}: {e}')
+            self.logger.error(f"Error checking boost for guild {guild_id}, member {member_id}: {e}")
             return False
 
     async def respond(self, ctx: commands.Context, text: str, delete_after=5, ephemeral=True, del_cmd=True):
@@ -257,7 +258,7 @@ class Bot(commands.Bot):
 
     def lock_exists(self):
         """Check if the lock file exists."""
-        return os.path.exists(f'{self.script_path}/lock.txt')
+        return os.path.exists(f"{self.script_path}/lock.txt")
 
 
 class Default_Cog(commands.Cog):
@@ -283,7 +284,7 @@ class Default_Cog(commands.Cog):
 
 
 bot = Bot()
-descripts = {'type': 'The type of thing to toggle.', 'name': 'The name of the thing to toggle.'}
+descripts = {"type": "The type of thing to toggle.", "name": "The name of the thing to toggle."}
 
 
 def p(desc, default=None):
@@ -297,7 +298,7 @@ async def check_guild(ctx):
 
 @bot.check
 async def check_channel(ctx):
-    if ctx.channel.id in disabled_channels and ctx.command.name != 'toggle':
+    if ctx.channel.id in disabled_channels and ctx.command.name != "toggle":
         if ctx.interaction:
             await ctx.send("This channel is disabled.", ephemeral=True)
         return False
@@ -315,12 +316,12 @@ async def check_channel(ctx):
 
 @bot.hybrid_command(name="hi", help="Says hello")
 async def hi(ctx):
-    await ctx.send('Hello!')
+    await ctx.send("Hello!")
 
 
 @bot.hybrid_command(name="ping", help="Sends bot's latency.")
 async def ping(ctx):
-    await ctx.send(f'Pong! {round(bot.latency * 1000)} ms')
+    await ctx.send(f"Pong! {round(bot.latency * 1000)} ms")
 
 
 @bot.hybrid_command(name="dm", help="Sends a DM to a user")
@@ -349,49 +350,51 @@ async def msg(ctx, channel: discord.TextChannel | None, *, text: str):
 
 @bot.hybrid_command(name="toggle", help="Toggles alot of things (owner only)")
 @commands.is_owner()
-@app_commands.describe(type=descripts['type'], name=descripts['name'])
+@app_commands.describe(type=descripts["type"], name=descripts["name"])
 @app_commands.choices(
     type=[
-        app_commands.Choice(name='cog', value='cog'),
-        app_commands.Choice(name='channel', value='channel'),
-        app_commands.Choice(name='command', value='command'),
-        app_commands.Choice(name='react', value='react')
-    ]
+        app_commands.Choice(name="cog", value="cog"),
+        app_commands.Choice(name="channel", value="channel"),
+        app_commands.Choice(name="command", value="command"),
+        app_commands.Choice(name="react", value="react"),
+    ],
 )
-async def toggle_thing(ctx, type: str = p(descripts['type']), name: str | None = p(descripts['name'])):
-    if type == 'cog':
+async def toggle_thing(ctx, type: str = p(descripts["type"]), name: str | None = p(descripts["name"])):
+    if type == "cog":
         await handle_toggle_cog(ctx, name)
-    elif type == 'channel':
+    elif type == "channel":
         await handle_toggle_channel(ctx)
-    elif type == 'react':
+    elif type == "react":
         bot.react = not bot.react
         await bot.respond(ctx, f"Reactions are now {'enabled' if bot.react else 'disabled'}")
-    elif type == 'command':
+    elif type == "command":
         await handle_toggle_command(ctx, name)
     else:
         await bot.respond(ctx, "Invalid type.")
+
 
 async def handle_toggle_cog(ctx, cog):
     if not cog:
         return await bot.respond(ctx, "Please provide a cog name.")
     try:
-        cog_name = ''
+        cog_name = ""
         for key, _ in bot.cogs.items():
             if cog.lower() in key.lower():
                 cog_name = key
                 break
         if cog_name in bot.cogs:
-            await bot.unload_extension(f'cogs.{cog}')
+            await bot.unload_extension(f"cogs.{cog}")
             await unloaded_coll.insert_one({"cog": cog})
             await bot.respond(ctx, f"Disabled {cog}")
         elif cog in unloaded_cogs:
-            await bot.load_extension(f'cogs.{cog}')
+            await bot.load_extension(f"cogs.{cog}")
             await unloaded_coll.delete_one({"cog": cog})
             await bot.respond(ctx, f"Enabled {cog}")
         else:
             await bot.respond(ctx, f"Cog not found: {cog}")
     except Exception as e:
         await bot.respond(ctx, f"Error: {e}", 10)
+
 
 async def handle_toggle_channel(ctx):
     if ctx.channel.id in disabled_channels:
@@ -403,6 +406,7 @@ async def handle_toggle_channel(ctx):
         await disabled_coll.insert_one({"_id": ctx.channel.id})
         disabled_channels.add(ctx.channel.id)
         await ctx.send("This channel has been disabled for bot commands.")
+
 
 async def handle_toggle_command(ctx, command):
     if not command:
