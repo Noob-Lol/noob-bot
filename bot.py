@@ -79,6 +79,7 @@ class Bot(commands.Bot):
         await pcloud.connect()
         self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(7), raise_for_status=True)
         global unloaded_cogs, disabled_channels, disabled_commands
+        guild_id = int(os.environ["GUILD_ID"]) if os.getenv("GUILD_ID") else None
         unloaded_cogs = {cog["cog"] async for cog in unloaded_coll.find()}
         disabled_channels = {channel["_id"] async for channel in disabled_coll.find()}
         disabled_commands = {command["command"] async for command in disabled_com_coll.find()}
@@ -95,6 +96,18 @@ class Bot(commands.Bot):
             if command:
                 self.logger.info(f"Disabling command: {command.name}")
                 command.enabled = False
+        target = discord.Object(guild_id) if guild_id else None
+        sync_str = "for guild " + str(guild_id) if guild_id else "globally"
+        try:
+            if await needs_sync(self, target):
+                await self.tree.sync(guild=target)
+                self.logger.info(f"Successfully synced commands {sync_str}.")
+            else:
+                self.logger.info(f"Commands already in sync {sync_str}.")
+        except discord.Forbidden:
+            self.logger.error(f"Bot does not have access to guild {guild_id} for syncing.")
+        except Exception as e:
+            self.logger.exception(f"Failed to sync commands {sync_str}: {e}")
         app = web.Application()
 
         def count_values():
@@ -317,6 +330,31 @@ bot = Bot()
 descripts = {"type": "The type of thing to toggle.", "name": "The name of the thing to toggle."}
 
 
+async def needs_sync(bot: Bot, guild: discord.Object | None):
+    """Check if slash commands need to be synced."""
+    remote = await bot.tree.fetch_commands(guild=guild)
+    local = bot.tree.get_commands(guild=guild)
+    remote_map = {cmd.name: cmd for cmd in remote}
+    local_map = {cmd.name: cmd for cmd in local}
+    if len(local_map) != len(remote_map):
+        return True
+    for name, l_cmd in local_map.items():
+        r_cmd = remote_map.get(name)
+        if not r_cmd:
+            return True
+        # Only check app commands
+        if isinstance(l_cmd, (app_commands.ContextMenu, app_commands.Group)):
+            continue
+        if l_cmd.description != r_cmd.description:
+            return True
+        if len(l_cmd.parameters) != len(r_cmd.options):
+            return True
+        for param, option in zip(l_cmd.parameters, r_cmd.options):
+            if param.name != option.name or param.description != option.description:
+                return True
+    return False
+
+
 def p(desc, default=None):
     return commands.parameter(description=desc, default=default)
 
@@ -382,7 +420,7 @@ async def msg(ctx: Ctx, channel: discord.TextChannel | None, *, text: str):
         await bot.respond(ctx, f"Could not send message, {e}")
 
 
-@bot.hybrid_command(name="toggle", help="Toggles alot of things (owner only)")
+@bot.hybrid_command(name="toggle", help="Toggles a lot of things (owner only)")
 @commands.is_owner()
 @app_commands.describe(type=descripts["type"], name=descripts["name"])
 @app_commands.choices(
