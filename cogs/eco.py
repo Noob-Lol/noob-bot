@@ -5,10 +5,10 @@ import discord
 from discord.ext import commands, tasks
 from discord.ui import Button, View
 
-from bot import Bot, Default_Cog
+from bot import BaseCog, Bot, Ctx
 
 
-class EconomyCog(Default_Cog):
+class EconomyCog(BaseCog):
     def __init__(self, bot: Bot):
         super().__init__(bot)
         self.eco = bot.db["economy"]
@@ -18,9 +18,9 @@ class EconomyCog(Default_Cog):
         self.logger.info(f"Dashboard link: {self.dash_url}")
         self.cleanup_old_farm.start()
 
-    @commands.hybrid_command(name="farm", help="Gives some noob credits")
+    @commands.hybrid_command(name="farm", help="Gives some currency once a day")
     @commands.cooldown(1, 10, commands.BucketType.user)
-    async def farm(self, ctx: commands.Context):
+    async def farm(self, ctx: Ctx):
         today_dt = datetime.datetime.combine(datetime.date.today(), datetime.time(0, 0, 0))
         user_id = ctx.author.id
         result = await self.farm_usage.find_one({"_id": user_id})
@@ -44,7 +44,7 @@ class EconomyCog(Default_Cog):
         await ctx.send(f"{ctx.author.mention}, you have been given {amount:g} {self.bot.currency}! Your new balance is {new_bal:g}.")
 
     @commands.hybrid_command(name="dash", help="Get your personal dashboard link")
-    async def dashboard(self, ctx: commands.Context):
+    async def dashboard(self, ctx: Ctx):
         if not self.dash_url:
             return await ctx.send("Dashboard link is not set.")
         if not ctx.interaction:
@@ -59,9 +59,9 @@ class EconomyCog(Default_Cog):
         url = f"{self.dash_url}/{token}"
         await self.bot.respond(ctx, f"Here is your dashboard link: [Click](<{url}>)")
 
-    @commands.hybrid_command(name="give", help="Gives noob credits to another user")
+    @commands.hybrid_command(name="give", help="Give currency to another user")
     @commands.cooldown(1, 10, commands.BucketType.user)
-    async def give(self, ctx: commands.Context, user: discord.User, amount: float):
+    async def give(self, ctx: Ctx, user: discord.Member, amount: float):
         if amount < 1:
             return await ctx.send("Amount must be at least 1.")
         author = ctx.author
@@ -96,7 +96,7 @@ class EconomyCog(Default_Cog):
         await self.bot.respond(ctx, f"{user.name}'s data has been removed from the database.")
 
     @commands.hybrid_command(name="balance", help="Displays your current balance")
-    async def balance(self, ctx):
+    async def balance(self, ctx: Ctx):
         user_id = ctx.author.id
         user = await self.eco.find_one({"_id": user_id})
         if user:
@@ -107,11 +107,10 @@ class EconomyCog(Default_Cog):
 
     @commands.hybrid_command(name="leaderboard", help="Displays the leaderboard of top users")
     @commands.cooldown(1, 30, commands.BucketType.user)
-    async def leaderboard(self, ctx: commands.Context):
+    async def leaderboard(self, ctx: Ctx):
+        guild = self.bot.verify_guild(ctx.guild)
         await ctx.defer(ephemeral=True)
-        if not ctx.guild:
-            return await ctx.send("This command can only be used in a guild.")
-        guild_members = {member.id: member for member in ctx.guild.members}
+        guild_members = {member.id: member for member in guild.members}
         users = await self.eco.find({"_id": {"$in": list(guild_members.keys())}}).to_list(length=100)
         leaderboard = sorted(
             [user for user in users if user.get("balance", 0) > 0],

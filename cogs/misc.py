@@ -4,23 +4,23 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot import Bot, Default_Cog
+from bot import BaseCog, Bot, Ctx
 
 
-class MiscCog(Default_Cog):
+class MiscCog(BaseCog):
     def __init__(self, bot: Bot):
         super().__init__(bot)
         # nothing is here, yet
 
     @commands.hybrid_command(name="add", help="Adds one to the database")
     @commands.cooldown(1, 5, commands.BucketType.user)
-    async def add(self, ctx):
+    async def add(self, ctx: Ctx):
         counter = self.bot.counter
         result = await counter.find_one_and_update({"_id": "counter"}, {"$inc": {"count": 1}}, upsert=True)
         await ctx.send(f'Counter incremented to {result["count"] + 1}.')
 
     @commands.hybrid_command(name="dmme", help="Sends a DM to the author")
-    async def dmme(self, ctx, *, text: str):
+    async def dmme(self, ctx: Ctx, *, text: str):
         try:
             await ctx.author.send(text)
             await self.bot.respond(ctx, "DM was sent", del_cmd=False)
@@ -30,23 +30,19 @@ class MiscCog(Default_Cog):
     @commands.hybrid_command(name="cb", help="Check boost count of a user")
     @commands.cooldown(1, 3, commands.BucketType.user)
     @app_commands.describe(user="User to check boost count for")
-    async def count_boosts(self, ctx, user: discord.Member | None):
-        if user is None:
-            user = ctx.author
-        if not isinstance(user, discord.Member):
-            await ctx.send("Invalid user provided.")
-            return
-        if user.premium_since:
-            boosts = await self.bot.check_boost(ctx.guild.id, user.id)
-            if not boosts:
-                return await ctx.send("Failed to get boost count.")
-            await ctx.send(f"{user.name} has {boosts} boosts.")
-        else:
+    async def count_boosts(self, ctx: Ctx, user: discord.Member | None):
+        guild, user = self.bot.verify_guild_user(ctx.guild, ctx.author if user is None else user)
+        boosts = await self.bot.check_boost(guild, user)
+        if boosts == -1:
+            return await ctx.send("Failed to get boost count.")
+        elif boosts == 0:
             await ctx.send(f"{user.name} has not boosted the server.")
+        else:
+            await ctx.send(f"{user.name} has {boosts} boosts.")
 
     @commands.hybrid_command(name="info", help="Displays information about the bot")
     @commands.cooldown(1, 30, commands.BucketType.user)
-    async def a_bot_info(self, ctx):
+    async def a_bot_info(self, ctx: Ctx):
         embed = discord.Embed(title="Bot info", color=discord.Color.random())
         embed.add_field(name="Prefix", value=">")
         embed.add_field(name="D.py version", value=discord.__version__)
@@ -57,7 +53,7 @@ class MiscCog(Default_Cog):
 
     @commands.hybrid_command(name="weather", help="Sends the weather for a city")
     @app_commands.describe(city="City name")
-    async def weather(self, ctx: commands.Context, *, city: str):
+    async def weather(self, ctx: Ctx, *, city: str):
         headers = {
             # this is not my api key
             "X-RapidAPI-Key": "a3a7d073famsh43a70b10b861ed7p115a35jsnb340981d017b",
@@ -91,7 +87,7 @@ class MiscCog(Default_Cog):
 
     @commands.hybrid_command(name="log", help="Logs a message to the log file")
     @commands.is_owner()
-    async def log_text(self, ctx, *, text: str):
+    async def log_text(self, ctx: Ctx, *, text: str):
         await self.bot.log_to_file(text, "test_log.txt")
         await self.bot.respond(ctx, "Message logged")
 

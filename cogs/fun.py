@@ -3,12 +3,12 @@ import random
 import time
 
 import discord
+import openai
 from discord import app_commands
 from discord.ext import commands
 from gradio_client import Client
-from openai import AsyncOpenAI
 
-from bot import Bot, Default_Cog
+from bot import BaseCog, Bot, Ctx
 
 
 def split_response(response: str, max_length=1900):
@@ -26,11 +26,11 @@ def split_response(response: str, max_length=1900):
     return chunks
 
 
-class FunCog(Default_Cog):
+class FunCog(BaseCog):
     def __init__(self, bot: Bot):
         super().__init__(bot)
         self.hf_token = os.environ["HF_TOKEN"]
-        self.client = AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=os.environ["OR_TOKEN"])
+        self.client = openai.AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=os.environ["OR_TOKEN"])
         self.merged = self.dev = self.schnell = None
 
     async def cog_load(self):
@@ -54,18 +54,18 @@ class FunCog(Default_Cog):
             setattr(self, var_name, None)
 
     @commands.hybrid_command(name="cat", help="Sends a random cat image")
-    async def cat(self, ctx):
+    async def cat(self, ctx: Ctx):
         response = await self.bot.session.get("https://api.thecatapi.com/v1/images/search")
         data = await response.json()
         await ctx.send(data[0]["url"])
 
     @commands.hybrid_command(name="flip", help="Flips a coin")
-    async def flip(self, ctx):
+    async def flip(self, ctx: Ctx):
         choices = ["Heads", "Tails"]
         await ctx.send(f"**{ctx.author.name}** flipped a coin and it landed on **{random.choice(choices)}**")
 
     @commands.hybrid_command(name="random", help="Sends a random number")
-    async def random(self, ctx, min: int | None, max: int | None):
+    async def random(self, ctx: Ctx, min: int | None, max: int | None):
         if min is None or max is None:
             await ctx.send("Input two numbers", delete_after=3)
         elif min == max:
@@ -76,7 +76,7 @@ class FunCog(Default_Cog):
             await ctx.send(f"**{ctx.author.name}** rolled a **{random.randint(min, max)}**")
 
     @commands.hybrid_command(name="joke", help="Sends a random joke")
-    async def joke(self, ctx):
+    async def joke(self, ctx: Ctx):
         flags = "nsfw,religious,political,racist,sexist,explicit"
         response = await self.bot.session.get(f"https://v2.jokeapi.dev/joke/Any?blacklistFlags={flags}")
         joke = await response.json()
@@ -88,7 +88,7 @@ class FunCog(Default_Cog):
     @commands.hybrid_command(name="chat", help="Chat with ai")
     @commands.cooldown(1, 30, commands.BucketType.user)
     @app_commands.describe(prompt="A prompt for the ai")
-    async def ai_chat(self, ctx: commands.Context, *, prompt: str):
+    async def ai_chat(self, ctx: Ctx, *, prompt: str):
         await ctx.defer()
         try:
             async with ctx.typing():
@@ -111,6 +111,9 @@ class FunCog(Default_Cog):
                                     "text": f"{prompt}",
                                 },
                                 ]}])
+                except openai.RateLimitError:
+                    self.logger.warning("Api rate limit exceeded")
+                    return await ctx.reply("Api rate limit exceeded, please try again later")
                 except Exception as e:
                     self.logger.exception(f"Error in ai_chat command while creating completion: {e}")
                     return await ctx.reply("Something went wrong, please try again later")
@@ -136,7 +139,7 @@ class FunCog(Default_Cog):
             app_commands.Choice(name="merged", value="merged"),
             app_commands.Choice(name="dev", value="dev"),
         ])
-    async def image(self, ctx: commands.Context, *, prompt: str, seed: int = 0, width: int = 1024, height: int = 1024,
+    async def image(self, ctx: Ctx, *, prompt: str, seed: int = 0, width: int = 1024, height: int = 1024,
                     guidance_scale: float = 3.5, steps: int = 4, model: str = "schnell"):
         await ctx.defer()
         rand = True

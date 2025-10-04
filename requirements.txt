@@ -4,7 +4,5 @@ pymongo
 gradio_client
 openai
 aiofiles
-cloudscraper
 pytz
-beautifulsoup4
 async_pcloud

@@ -41,6 +41,11 @@ counter = db["counter"]
 unloaded_coll = db["unloaded_cogs"]
 disabled_coll = db["disabled_channels"]
 disabled_com_coll = db["disabled_commands"]
+Ctx = commands.Context
+
+
+class GuildOnly(commands.CheckFailure):
+    pass
 
 
 class Bot(commands.Bot):
@@ -121,11 +126,11 @@ class Bot(commands.Bot):
                 await message.add_reaction("☠️")
         await self.process_commands(message)
 
-    async def on_command(self, ctx: commands.Context):
+    async def on_command(self, ctx: Ctx):
         if await self.is_owner(ctx.author) and ctx.command:
             ctx.command.reset_cooldown(ctx)
 
-    async def on_command_error(self, ctx: commands.Context, error):
+    async def on_command_error(self, ctx: Ctx, error):
         if hasattr(ctx.command, "on_error") and not hasattr(ctx, "unhandled_error"):
             return
         ignored = (commands.CommandNotFound, app_commands.errors.CommandNotFound)
@@ -133,8 +138,9 @@ class Bot(commands.Bot):
         if isinstance(error, ignored):
             return
         if isinstance(error, commands.CheckFailure):
-            if ctx.guild is None:
+            if ctx.guild is None or isinstance(error, GuildOnly):
                 await ctx.send("You can't use commands in DMs.", ephemeral=True)
+                # await ctx.send("This command can only be used in a guild.", ephemeral=True)  # some commands may be allowed in dms
         elif isinstance(error, discord.HTTPException) and error.status == 429:
             self.logger.warning(f"Rate limited. Retry in {error.response.headers['Retry-After']} seconds.", exc_info=error)
         elif isinstance(error, discord.HTTPException) and error.status == 400:
@@ -185,6 +191,7 @@ class Bot(commands.Bot):
             raise Exception(r["error"])
 
     async def log_to_file(self, text: str, file: str):
+        """Append text to a file."""
         try:
             async with self.file_lock:
                 rtext = await self.download_file(file, True)
@@ -194,6 +201,7 @@ class Bot(commands.Bot):
             self.logger.exception(f"Error for {file}: {e}")
 
     async def get_lines(self, num_lines: int, file: str):
+        """Get and remove the first num_lines from a file."""
         try:
             async with self.file_lock:
                 text = await self.download_file(file)
@@ -210,6 +218,7 @@ class Bot(commands.Bot):
             self.logger.exception(f"Error for {file}: {e}")
 
     async def count_lines(self, file: str):
+        """Count the number of lines in a file."""
         try:
             async with self.file_lock:
                 text = await self.download_file(file)
@@ -217,31 +226,34 @@ class Bot(commands.Bot):
         except Exception as e:
             self.logger.exception(f"Error for {file}: {e}")
 
-    async def check_boost(self, guild_id: int, member_id: int):
+    async def check_boost(self, guild: discord.Guild, member: discord.Member) -> int:
+        """Check how many boosts a member has in a guild, return -1 on error."""
         try:
+            if not member.premium_since:
+                return 0
             if not RTOKEN:
                 raise Exception("RTOKEN not found.")
-            url = f"https://discord.com/api/v10/guilds/{guild_id}/premium/subscriptions"
+            url = f"https://discord.com/api/v10/guilds/{guild.id}/premium/subscriptions"
             response = await self.session.get(url, headers={"authorization": RTOKEN})
             if response.status != 200:
-                self.logger.error(f"Error getting boost count for guild {guild_id}: {response.status}")
-                return False
+                self.logger.error(f"Error getting boost count for guild {guild.id}: {response.status}")
+                return -1
             response = await response.json()
             if isinstance(response, list):
                 boost_count = 0
                 for boost in response:
                     user_id = boost["user"]["id"]
-                    if int(user_id) == member_id:
+                    if int(user_id) == member.id:
                         boost_count += 1
                 return boost_count
             else:
-                self.logger.error(f"Error getting boost count for user {member_id}: {response}")
-                return False
+                self.logger.error(f"Error getting boost count for user {member.id}: {response}")
+                return -1
         except Exception as e:
-            self.logger.error(f"Error checking boost for guild {guild_id}, member {member_id}: {e}")
-            return False
+            self.logger.error(f"Error checking boost for guild {guild.id}, member {member.id}: {e}")
+            return -1
 
-    async def respond(self, ctx: commands.Context, text: str, delete_after=5, ephemeral=True, del_cmd=True):
+    async def respond(self, ctx: Ctx, text: str, delete_after=5, ephemeral=True, del_cmd=True):
         """default respond function (useful)"""
         if ctx.interaction:
             await ctx.send(text, ephemeral=ephemeral)
@@ -252,6 +264,24 @@ class Bot(commands.Bot):
                 return await ctx.send(text)
             await ctx.send(text, delete_after=delete_after)
 
+    def verify_guild(self, guild: discord.Guild | None):
+        """Check if the command is run in guild"""
+        if not guild:
+            raise GuildOnly
+        return guild
+
+    def verify_guild_user(self, guild: discord.Guild | None, user: discord.Member | discord.User):
+        """Check if the command is run in guild and user is a member"""
+        if not guild or not isinstance(user, discord.Member):
+            raise GuildOnly
+        return guild, user
+
+    def verify_guild_channel(self, guild: discord.Guild | None, channel: discord.abc.Messageable):
+        """Check if the command is run in guild and channel is a text channel"""
+        if not guild or not isinstance(channel, discord.TextChannel):
+            raise GuildOnly
+        return guild, channel
+
     def get_env(self, key, default: str | None = None):
         """Get an environment variable."""
         return os.getenv(key, default)
@@ -261,7 +291,7 @@ class Bot(commands.Bot):
         return os.path.exists(f"{self.script_path}/lock.txt")
 
 
-class Default_Cog(commands.Cog):
+class BaseCog(commands.Cog):
     def __init__(self, bot: Bot):
         self.bot = bot
         self._ready = False
@@ -292,13 +322,13 @@ def p(desc, default=None):
 
 
 @bot.check
-async def check_guild(ctx):
+async def check_guild(ctx: Ctx):
     return ctx.guild
 
 
 @bot.check
-async def check_channel(ctx):
-    if ctx.channel.id in disabled_channels and ctx.command.name != "toggle":
+async def check_channel(ctx: Ctx):
+    if ctx.channel.id in disabled_channels and ctx.command and ctx.command.name != "toggle":
         if ctx.interaction:
             await ctx.send("This channel is disabled.", ephemeral=True)
         return False
@@ -315,18 +345,18 @@ async def check_channel(ctx):
 
 
 @bot.hybrid_command(name="hi", help="Says hello")
-async def hi(ctx):
+async def hi(ctx: Ctx):
     await ctx.send("Hello!")
 
 
 @bot.hybrid_command(name="ping", help="Sends bot's latency.")
-async def ping(ctx):
+async def ping(ctx: Ctx):
     await ctx.send(f"Pong! {round(bot.latency * 1000)} ms")
 
 
 @bot.hybrid_command(name="dm", help="Sends a DM to a user")
 @commands.is_owner()
-async def dm(ctx, member: discord.Member, *, content):
+async def dm(ctx: Ctx, member: discord.Member, *, content: str):
     try:
         await member.send(content)
         await bot.respond(ctx, "DM was sent")
@@ -336,9 +366,13 @@ async def dm(ctx, member: discord.Member, *, content):
 
 @bot.hybrid_command(name="msg", help="Sends message as bot")
 @commands.is_owner()
-async def msg(ctx, channel: discord.TextChannel | None, *, text: str):
+async def msg(ctx: Ctx, channel: discord.TextChannel | None, *, text: str):
     if not channel:
-        channel = ctx.channel
+        if isinstance(ctx.channel, discord.TextChannel):
+            channel = ctx.channel
+        else:
+            await bot.respond(ctx, "Cannot send messages in DMs", ephemeral=True)
+            return
         if not channel:
             return
     try:
@@ -359,7 +393,7 @@ async def msg(ctx, channel: discord.TextChannel | None, *, text: str):
         app_commands.Choice(name="react", value="react"),
     ],
 )
-async def toggle_thing(ctx, type: str = p(descripts["type"]), name: str | None = p(descripts["name"])):
+async def toggle_thing(ctx: Ctx, type: str = p(descripts["type"]), name: str | None = p(descripts["name"])):
     if type == "cog":
         await handle_toggle_cog(ctx, name)
     elif type == "channel":
@@ -373,7 +407,7 @@ async def toggle_thing(ctx, type: str = p(descripts["type"]), name: str | None =
         await bot.respond(ctx, "Invalid type.")
 
 
-async def handle_toggle_cog(ctx, cog):
+async def handle_toggle_cog(ctx: Ctx, cog: str | None):
     if not cog:
         return await bot.respond(ctx, "Please provide a cog name.")
     try:
@@ -396,7 +430,7 @@ async def handle_toggle_cog(ctx, cog):
         await bot.respond(ctx, f"Error: {e}", 10)
 
 
-async def handle_toggle_channel(ctx):
+async def handle_toggle_channel(ctx: Ctx):
     if ctx.channel.id in disabled_channels:
         result = await disabled_coll.delete_one({"_id": ctx.channel.id})
         if result.deleted_count > 0:
@@ -408,7 +442,7 @@ async def handle_toggle_channel(ctx):
         await ctx.send("This channel has been disabled for bot commands.")
 
 
-async def handle_toggle_command(ctx, command):
+async def handle_toggle_command(ctx: Ctx, command):
     if not command:
         return await bot.respond(ctx, "Please provide a command name.")
     found = bot.get_command(command)
@@ -426,7 +460,7 @@ async def handle_toggle_command(ctx, command):
 
 @bot.command(name="sync", help="Syncs commands")
 @commands.is_owner()
-async def sync(ctx):
+async def sync(ctx: Ctx):
     await ctx.message.delete()
     await bot.tree.sync()
     await ctx.send("Synced!", delete_after=3)
