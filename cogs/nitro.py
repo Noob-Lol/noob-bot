@@ -40,7 +40,7 @@ class NitroCog(BaseCog):
         counter_ids = ["nitro_counter", "nitro_limit", "b1mult", "b2mult", "new_nitro_system", "nitro_toggle"]
         results = await asyncio.gather(*[self.bot.counter.find_one({"_id": _id}) for _id in counter_ids])
         # Map results to instance variables
-        for _id, doc in zip(counter_ids, results):
+        for _id, doc in zip(counter_ids, results, strict=False):
             value = doc.get("count", 0) if doc else 0
             if _id in ["new_nitro_system", "nitro_toggle"]:
                 value = doc.get("state", True) if doc else True
@@ -71,7 +71,8 @@ class NitroCog(BaseCog):
         psection_id = 22113084771863  # Promotions section
         resp = await self.bot.session.get(f"{base}?per_page=100")
         data = await resp.json()
-        exclusions = ["customers", "youtube", "game pass ultimate"]
+        # note: wemod made fake promo, so it will be excluded
+        exclusions = ["customers", "youtube", "game pass ultimate", "wemod"]
         for article in data["articles"]:
             if article["section_id"] != psection_id:
                 continue
@@ -140,7 +141,7 @@ class NitroCog(BaseCog):
             return await self.bot.respond(ctx, "Nitro commands are disabled.")
         if not self.active_promo:
             return await self.bot.respond(ctx, no_active_promo_str)
-        if self.bot.lock_exists():
+        if await self.bot.path_exists(f"{self.bot.script_path}/lock.txt"):
             return await self.bot.respond(ctx, "The bot is in maintenance, please retry later.")
         place = place.lower()
         if place != "dm" and place != "channel":
@@ -240,7 +241,7 @@ class NitroCog(BaseCog):
             else:
                 await ctx.send("Invalid argument.")
         else:
-            ctx.unhandled_error = True  # type: ignore | its unknown attribute, but works. TODO: add attribute to Ctx
+            ctx.unhandled_error = True
 
     @commands.hybrid_command(name="limit", help="Set nitro limit and multipliers.")
     @commands.is_owner()

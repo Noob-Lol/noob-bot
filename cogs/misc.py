@@ -44,12 +44,43 @@ class MiscCog(BaseCog):
     @commands.cooldown(1, 30, commands.BucketType.user)
     async def a_bot_info(self, ctx: Ctx):
         embed = discord.Embed(title="Bot info", color=discord.Color.random())
-        embed.add_field(name="Prefix", value=">")
+        embed.add_field(name="Prefix", value=f"/ (Slash) or {ctx.prefix}")
         embed.add_field(name="D.py version", value=discord.__version__)
         embed.add_field(name="Python version", value=platform.python_version())
         embed.add_field(name="Bot owner + dev", value="n01b")
         embed.add_field(name="Source code", value="[GitHub](https://github.com/noob-lol/noob-bot)")
         await ctx.send(embed=embed)
+
+    @commands.hybrid_command(name="serverinfo", description="Get some useful (or not) information about the server.")
+    async def serverinfo(self, ctx: Ctx):
+        guild = self.bot.verify_guild(ctx.guild)
+        roles = [role.name for role in guild.roles]
+        num_roles = len(roles)
+        if num_roles > 50:
+            roles = roles[:50]
+            roles.append(f">>>> Displaying [50/{num_roles}] Roles")
+        roles = ", ".join(roles)
+        embed = discord.Embed(title="**Server Name:**", description=guild, color=0xBEBEFE)
+        if guild.icon is not None:
+            embed.set_thumbnail(url=guild.icon.url)
+        embed.add_field(name="Server ID", value=guild.id)
+        embed.add_field(name="Member Count", value=guild.member_count)
+        embed.add_field(name="Text/Voice Channels", value=f"{len(guild.channels)}")
+        embed.add_field(name=f"Roles ({len(guild.roles)})", value=roles)
+        embed.set_footer(text=f"Created at: {guild.created_at}")
+        await ctx.send(embed=embed)
+
+    @commands.hybrid_command(name="feedback", description="Submit a feedback for the owners of the bot")
+    @commands.cooldown(1, 30, commands.BucketType.user)
+    async def feedback(self, ctx: Ctx, *, text: str | None = None):
+        app_owner = (await self.bot.application_info()).owner
+        await app_owner.send(
+            embed=discord.Embed(
+                title="New Feedback",
+                description=f"{ctx.author} (<@{ctx.author.id}>) has submitted a new feedback:\n```\n{text}\n```",
+                color=0xBEBEFE),
+        )
+        await self.bot.respond(ctx, "Feedback submitted")
 
     @commands.hybrid_command(name="weather", help="Sends the weather for a city")
     @app_commands.describe(city="City name")
@@ -90,6 +121,11 @@ class MiscCog(BaseCog):
     async def log_text(self, ctx: Ctx, *, text: str):
         await self.bot.log_to_file(text, "test_log.txt")
         await self.bot.respond(ctx, "Message logged")
+
+    @commands.hybrid_command(name="crash", help="Crashes the bot (for testing)")
+    @commands.is_owner()
+    async def crash_bot(self, ctx: Ctx, error_message: str = "crash"):
+        raise discord.DiscordException(error_message)
 
 
 async def setup(bot: Bot):

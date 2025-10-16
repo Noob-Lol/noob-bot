@@ -1,10 +1,12 @@
 import asyncio
+import datetime
 import inspect
 import logging
 import os
 
 import aiofiles
 import aiohttp
+import anyio
 import discord
 import dotenv
 from aiohttp import web
@@ -37,11 +39,15 @@ pcloud = AsyncPyCloud(PTOKEN, folder=folder)
 uri = os.environ["MONGODB_URI"]
 client = AsyncMongoClient(uri)
 db = client["discord_bot"]
-counter = db["counter"]
-unloaded_coll = db["unloaded_cogs"]
-disabled_coll = db["disabled_channels"]
-disabled_com_coll = db["disabled_commands"]
-Ctx = commands.Context
+
+
+class CustomContext(commands.Context):
+    """Custom commands.Context class with extra stuff"""
+    # TODO: add more functions or attributes
+    unhandled_error: bool | None = None
+
+
+Ctx = CustomContext
 
 
 class GuildOnly(commands.CheckFailure):
@@ -54,7 +60,7 @@ class Bot(commands.Bot):
         super().__init__(command_prefix=commands.when_mentioned_or(">"), intents=intents)
         self.script_path = script_path
         self.db = db
-        self.counter = counter
+        self.counter = db["counter"]
         self.react = False
         self.file_lock = asyncio.Lock()
         self.currency = "noob credits"
@@ -76,23 +82,24 @@ class Bot(commands.Bot):
 
     # bot events
     async def setup_hook(self):
-        await pcloud.connect()
         self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(7), raise_for_status=True)
-        global unloaded_cogs, disabled_channels, disabled_commands
+        global disabled_items
         guild_id = int(os.environ["GUILD_ID"]) if os.getenv("GUILD_ID") else None
-        unloaded_cogs = {cog["cog"] async for cog in unloaded_coll.find()}
-        disabled_channels = {channel["_id"] async for channel in disabled_coll.find()}
-        disabled_commands = {command["command"] async for command in disabled_com_coll.find()}
+        disabled_items = {}
+        async for item in db["disabled_items"].find():
+            if item["thing"] not in disabled_items:
+                disabled_items[item["thing"]] = set()
+            disabled_items[item["thing"]].add(item["item_id"])
         cogs = [filename[:-3] for filename in os.listdir(f"{script_path}/cogs") if filename.endswith(".py")]
         for cog_name in cogs:
-            if cog_name in unloaded_cogs:
+            if cog_name in disabled_items.get("cog", []):
                 continue
             try:
                 await self.load_extension(f"cogs.{cog_name}")
             except commands.ExtensionAlreadyLoaded:
                 pass
-        disabled_commands_list = [self.get_command(cmd) for cmd in disabled_commands if self.get_command(cmd)]
-        for command in disabled_commands_list:
+        disabled_commands = [self.get_command(cmd) for cmd in disabled_items.get("command", []) if self.get_command(cmd)]
+        for command in disabled_commands:
             if command:
                 self.logger.info(f"Disabling command: {command.name}")
                 command.enabled = False
@@ -126,7 +133,7 @@ class Bot(commands.Bot):
             self.logger.error(f"Port {port} is already in use")
 
     async def on_ready(self):
-        await self.change_presence(activity=discord.CustomActivity(name='im cool 😎, ">" prefix'))
+        await self.change_presence(activity=discord.CustomActivity(name='I\'m cool 😎, ">" prefix'))
         self.logger.info(f"Logged in as {self.user}")
 
     async def on_message(self, message: discord.Message):
@@ -143,8 +150,15 @@ class Bot(commands.Bot):
         if await self.is_owner(ctx.author) and ctx.command:
             ctx.command.reset_cooldown(ctx)
 
-    async def on_command_error(self, ctx: Ctx, error):
-        if hasattr(ctx.command, "on_error") and not hasattr(ctx, "unhandled_error"):
+    async def get_context(self, message, *, cls=None):
+        """Use CustomContext so error handlers can safely set attributes like unhandled_error."""
+        if cls is None:
+            cls = CustomContext
+        return await super().get_context(message, cls=cls)
+
+    async def on_command_error(self, ctx: Ctx, error):  # type: ignore | pylance doesnt like type override here
+        """Handle command errors with proper type handling"""
+        if hasattr(ctx.command, "on_error") and ctx.unhandled_error is None:
             return
         ignored = (commands.CommandNotFound, app_commands.errors.CommandNotFound)
         error = getattr(error, "original", error)
@@ -154,6 +168,8 @@ class Bot(commands.Bot):
             if ctx.guild is None or isinstance(error, GuildOnly):
                 await ctx.send("You can't use commands in DMs.", ephemeral=True)
                 # await ctx.send("This command can only be used in a guild.", ephemeral=True)  # some commands may be allowed in dms
+        elif isinstance(error, commands.DisabledCommand):
+            await self.respond(ctx, f"{ctx.command} command is disabled.")
         elif isinstance(error, discord.HTTPException) and error.status == 429:
             self.logger.warning(f"Rate limited. Retry in {error.response.headers['Retry-After']} seconds.", exc_info=error)
         elif isinstance(error, discord.HTTPException) and error.status == 400:
@@ -165,28 +181,32 @@ class Bot(commands.Bot):
         elif isinstance(error, (discord.NotFound, discord.Forbidden)):
             self.logger.exception(error, exc_info=error)
         else:
-            self.logger.exception(f"Ignoring exception in command {ctx.command}:", exc_info=error)
+            self.logger.exception(f"Ignoring exception in command {ctx.command}: {str(error)}", exc_info=error)
             await ctx.send(f"Exception in command {ctx.command}: {str(error)}", ephemeral=True)
 
     async def close(self):
         await super().close()
         await self.session.close()
-        await pcloud.disconnect()
-        self.logger.info("Stopped.")
+        self.logger.info("Bye!")
         await client.aclose()
 
     # custom functions
+    async def path_exists(self, path: str):
+        """Check if path exists, async version."""
+        return await anyio.Path(path).exists()
+
     async def download_file(self, file: str, not_found_ok=False):
         """Download file content from pCloud and return as text.
         not_found_ok=True will not raise an exception if the file is not found."""
         if LOCAL_STORAGE:
-            if not os.path.exists(f"{script_path}/{file}"):
+            if not await self.path_exists(f"{script_path}/{file}"):
                 if not_found_ok:
                     return ""
                 raise Exception("Not found in local storage.")
             async with aiofiles.open(f"{script_path}/{file}") as f:
                 return await f.read()
-        file_text = await pcloud.gettextfile(not_found_ok, path=file)
+        async with pcloud:
+            file_text = await pcloud.gettextfile(not_found_ok, path=file)
         if file_text is None:
             if not_found_ok:
                 return ""
@@ -199,7 +219,8 @@ class Bot(commands.Bot):
             async with aiofiles.open(f"{script_path}/{filename}", "w") as f:
                 await f.write(content)
             return
-        r = await pcloud.upload_one_file(filename, content, path="/")
+        async with pcloud:
+            r = await pcloud.upload_one_file(filename, content, path="/")
         if r.get("error"):
             raise Exception(r["error"])
 
@@ -270,12 +291,13 @@ class Bot(commands.Bot):
         """default respond function (useful)"""
         if ctx.interaction:
             await ctx.send(text, ephemeral=ephemeral)
-        else:
-            if del_cmd:
-                await ctx.message.delete()
-            if not delete_after:
-                return await ctx.send(text)
-            await ctx.send(text, delete_after=delete_after)
+            return
+        if del_cmd:
+            await ctx.message.delete()
+        if not delete_after:
+            await ctx.send(text)
+            return
+        await ctx.send(text, delete_after=delete_after)
 
     def verify_guild(self, guild: discord.Guild | None):
         """Check if the command is run in guild"""
@@ -298,10 +320,6 @@ class Bot(commands.Bot):
     def get_env(self, key, default: str | None = None):
         """Get an environment variable."""
         return os.getenv(key, default)
-
-    def lock_exists(self):
-        """Check if the lock file exists."""
-        return os.path.exists(f"{self.script_path}/lock.txt")
 
 
 class BaseCog(commands.Cog):
@@ -327,7 +345,7 @@ class BaseCog(commands.Cog):
 
 
 bot = Bot()
-descripts = {"type": "The type of thing to toggle.", "name": "The name of the thing to toggle."}
+descripts = {"thing": "The thing to toggle.", "name": "The name of the thing to toggle."}
 
 
 async def needs_sync(bot: Bot, guild: discord.Object | None):
@@ -349,7 +367,7 @@ async def needs_sync(bot: Bot, guild: discord.Object | None):
             return True
         if len(l_cmd.parameters) != len(r_cmd.options):
             return True
-        for param, option in zip(l_cmd.parameters, r_cmd.options):
+        for param, option in zip(l_cmd.parameters, r_cmd.options, strict=False):
             if param.name != option.name or param.description != option.description:
                 return True
     return False
@@ -366,20 +384,20 @@ async def check_guild(ctx: Ctx):
 
 @bot.check
 async def check_channel(ctx: Ctx):
-    if ctx.channel.id in disabled_channels and ctx.command and ctx.command.name != "toggle":
+    if ctx.channel.id in disabled_items.get("channel", []) and ctx.command and ctx.command.name != "toggle":
         if ctx.interaction:
-            await ctx.send("This channel is disabled.", ephemeral=True)
+            await ctx.send("Bot commands are restricted in this channel.", ephemeral=True)
         return False
     return True
 
-# TODO: add this
-# @bot.check
-# async def check_user(ctx):
-#     if ctx.author.id in disabled_users and ctx.command.name != 'toggle':
-#         if ctx.interaction:
-#             await ctx.send("You are disabled.", ephemeral = True)
-#         return False
-#     return True
+
+@bot.check
+async def check_user(ctx: Ctx):
+    if ctx.author.id in disabled_items.get("user", []) and ctx.command and ctx.command.name != "toggle":
+        if ctx.interaction:
+            await ctx.send("Your access to bot commands is currently restricted.", ephemeral=True)
+        return False
+    return True
 
 
 @bot.hybrid_command(name="hi", help="Says hello")
@@ -409,9 +427,7 @@ async def msg(ctx: Ctx, channel: discord.TextChannel | None, *, text: str):
         if isinstance(ctx.channel, discord.TextChannel):
             channel = ctx.channel
         else:
-            await bot.respond(ctx, "Cannot send messages in DMs", ephemeral=True)
-            return
-        if not channel:
+            await bot.respond(ctx, "Cannot send messages in DMs")
             return
     try:
         await channel.send(text)
@@ -422,27 +438,50 @@ async def msg(ctx: Ctx, channel: discord.TextChannel | None, *, text: str):
 
 @bot.hybrid_command(name="toggle", help="Toggles a lot of things (owner only)")
 @commands.is_owner()
-@app_commands.describe(type=descripts["type"], name=descripts["name"])
+@app_commands.describe(thing=descripts["thing"], name=descripts["name"])
 @app_commands.choices(
-    type=[
+    thing=[
         app_commands.Choice(name="cog", value="cog"),
         app_commands.Choice(name="channel", value="channel"),
         app_commands.Choice(name="command", value="command"),
         app_commands.Choice(name="react", value="react"),
+        app_commands.Choice(name="user", value="user"),
     ],
 )
-async def toggle_thing(ctx: Ctx, type: str = p(descripts["type"]), name: str | None = p(descripts["name"])):
-    if type == "cog":
+async def toggle_thing(ctx: Ctx, thing: str = p(descripts["thing"]), name: str | None = p(descripts["name"])):
+    if thing == "cog":
         await handle_toggle_cog(ctx, name)
-    elif type == "channel":
+    elif thing == "channel":
         await handle_toggle_channel(ctx)
-    elif type == "react":
+    elif thing == "react":
         bot.react = not bot.react
         await bot.respond(ctx, f"Reactions are now {'enabled' if bot.react else 'disabled'}")
-    elif type == "command":
+    elif thing == "command":
         await handle_toggle_command(ctx, name)
+    elif thing == "user":
+        await handle_toggle_user(ctx, name)
     else:
-        await bot.respond(ctx, "Invalid type.")
+        await bot.respond(ctx, "Invalid thing choice.")
+
+
+async def disable_item(ctx: Ctx, thing: str, id: str | int):
+    bot.logger.info(f"{thing} {id} by {ctx.author}")
+    await db["disabled_items"].insert_one({
+        "thing": thing, "item_id": id,
+        "disabled_at": datetime.datetime.now(datetime.timezone.utc),
+        "disabled_by": ctx.author.id,
+    })
+    if thing not in disabled_items:
+        disabled_items[thing] = set()
+    disabled_items[thing].add(id)
+
+
+async def enable_item(ctx: Ctx, thing: str, item_id: str | int):
+    bot.logger.info(f"{thing} {item_id} by {ctx.author}")
+    res = await db["disabled_items"].delete_one({"thing": thing, "item_id": item_id})
+    if thing in disabled_items and item_id in disabled_items[thing]:
+        disabled_items[thing].remove(item_id)
+    return res.deleted_count
 
 
 async def handle_toggle_cog(ctx: Ctx, cog: str | None):
@@ -456,11 +495,11 @@ async def handle_toggle_cog(ctx: Ctx, cog: str | None):
                 break
         if cog_name in bot.cogs:
             await bot.unload_extension(f"cogs.{cog}")
-            await unloaded_coll.insert_one({"cog": cog})
+            await disable_item(ctx, "cog", cog)
             await bot.respond(ctx, f"Disabled {cog}")
-        elif cog in unloaded_cogs:
+        elif cog in disabled_items.get("cog", []):
             await bot.load_extension(f"cogs.{cog}")
-            await unloaded_coll.delete_one({"cog": cog})
+            await enable_item(ctx, "cog", cog)
             await bot.respond(ctx, f"Enabled {cog}")
         else:
             await bot.respond(ctx, f"Cog not found: {cog}")
@@ -469,14 +508,12 @@ async def handle_toggle_cog(ctx: Ctx, cog: str | None):
 
 
 async def handle_toggle_channel(ctx: Ctx):
-    if ctx.channel.id in disabled_channels:
-        result = await disabled_coll.delete_one({"_id": ctx.channel.id})
-        if result.deleted_count > 0:
-            disabled_channels.remove(ctx.channel.id)
+    if ctx.channel.id in disabled_items.get("channel", []):
+        result = await enable_item(ctx, "channel", ctx.channel.id)
+        if result:
             await ctx.send("This channel has been enabled for bot commands.")
     else:
-        await disabled_coll.insert_one({"_id": ctx.channel.id})
-        disabled_channels.add(ctx.channel.id)
+        await disable_item(ctx, "channel", ctx.channel.id)
         await ctx.send("This channel has been disabled for bot commands.")
 
 
@@ -490,10 +527,32 @@ async def handle_toggle_command(ctx: Ctx, command):
         return await bot.respond(ctx, "Command not found.")
     result = found.enabled = not found.enabled
     if result:
-        await disabled_com_coll.delete_one({"command": command})
+        await enable_item(ctx, "command", command)
     else:
-        await disabled_com_coll.insert_one({"command": command})
+        await disable_item(ctx, "command", command)
     await bot.respond(ctx, f"Command {command} is now {'enabled' if result else 'disabled'}")
+
+
+async def handle_toggle_user(ctx: Ctx, user_id_or_mention: str | None):
+    if not user_id_or_mention:
+        return await bot.respond(ctx, "Please provide a user (mention or ID).")
+    uid = None
+    try:
+        if user_id_or_mention.isdigit():
+            uid = int(user_id_or_mention)
+        elif user_id_or_mention.startswith("<@") and user_id_or_mention.endswith(">"):
+            uid = int(user_id_or_mention.strip("<@!>"))
+    except Exception:
+        uid = None
+    if uid is None:
+        return await bot.respond(ctx, "Invalid user. Provide a mention or numeric ID.")
+    if uid in disabled_items.get("user", []):
+        result = await enable_item(ctx, "user", uid)
+        if result:
+            return await bot.respond(ctx, f"User <@{uid}> can now use bot commands.")
+    else:
+        await disable_item(ctx, "user", uid)
+        return await bot.respond(ctx, f"User <@{uid}> can no longer use bot commands.")
 
 
 @bot.command(name="sync", help="Syncs commands")
