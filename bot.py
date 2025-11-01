@@ -57,7 +57,8 @@ class GuildOnly(commands.CheckFailure):
 class Bot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.all()
-        super().__init__(command_prefix=commands.when_mentioned_or(">"), intents=intents)
+        self.prefix = ">"
+        super().__init__(command_prefix=commands.when_mentioned_or(self.prefix), intents=intents)
         self.script_path = script_path
         self.db = db
         self.counter = db["counter"]
