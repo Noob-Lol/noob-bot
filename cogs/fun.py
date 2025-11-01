@@ -1,4 +1,4 @@
-import os
+import io
 import random
 import time
 
@@ -29,10 +29,10 @@ def split_response(response: str, max_length=1900):
 class FunCog(BaseCog):
     def __init__(self, bot: Bot):
         super().__init__(bot)
-        self.hf_token = os.getenv("HF_TOKEN")
-        base_url = os.getenv("CHAT_API_BASE_URL")
-        api_key = os.getenv("CHAT_API_KEY")
-        self.chat_model = os.getenv("CHAT_MODEL")
+        self.hf_token = bot.get_env("HF_TOKEN")
+        base_url = bot.get_env("CHAT_API_BASE_URL")
+        api_key = bot.get_env("CHAT_API_KEY")
+        self.chat_model = bot.get_env("CHAT_MODEL")
         self.client = None
         if base_url and api_key:
             try:
@@ -41,7 +41,7 @@ class FunCog(BaseCog):
                 self.logger.exception(f"Failed to init chat client: {e}")
         else:
             self.logger.warning("CHAT_API_BASE_URL or CHAT_API_KEY not set; chat is disabled")
-        self.merged = self.dev = self.schnell = None
+        self.merged = self.dev = self.schnell = self.krea_dev = None
 
     async def cog_load(self):
         if not self.hf_token:
@@ -51,16 +51,17 @@ class FunCog(BaseCog):
 
     def load_models(self):
         models = {
-            "multimodalart/FLUX.1-merged": "merged",
-            "black-forest-labs/FLUX.1-dev": "dev",
-            "black-forest-labs/FLUX.1-schnell": "schnell",
+            "https://black-forest-labs-flux-1-schnell.hf.space": "schnell",
+            "https://multimodalart-flux-1-merged.hf.space": "merged",
+            "https://black-forest-labs-flux-1-dev.hf.space": "dev",
+            "https://black-forest-labs-flux-1-krea-dev.hf.space": "krea-dev",
         }
         for model, name in models.items():
             self.bot.loop.run_in_executor(None, self.load_one, model, name)
 
     def load_one(self, model_name, var_name):
         try:
-            model = Client(model_name, self.hf_token, verbose=False)
+            model = Client(model_name, self.hf_token, verbose=False, download_files=False)
             setattr(self, var_name, model)
         except Exception as e:
             self.logger.error(f"Model {model_name} failed to load: {e}")
@@ -195,6 +196,7 @@ class FunCog(BaseCog):
             app_commands.Choice(name="schnell", value="schnell"),
             app_commands.Choice(name="merged", value="merged"),
             app_commands.Choice(name="dev", value="dev"),
+            app_commands.Choice(name="krea-dev", value="krea-dev"),
         ])
     async def image(self, ctx: Ctx, *, prompt: str, seed: int = 0, width: int = 1024, height: int = 1024,
                     guidance_scale: float = 3.5, steps: int = 4, model: str = "schnell"):
@@ -202,34 +204,41 @@ class FunCog(BaseCog):
         rand = True
         if seed != 0:
             rand = False
-        arg_names = ["prompt", "seed", None, "width", "height", "guidance_scale", "steps"]
-        args = [prompt, seed, rand, width, height, guidance_scale, steps]
-        log_args = ", ".join(f"{name}: {value}" for name, value in zip(arg_names, args, strict=False) if name is not None)
+        arg_dict = {"prompt": prompt, "seed": seed, "randomize_seed": rand, "width": width, "height": height,
+                    "guidance_scale": guidance_scale, "num_inference_steps": steps, "api_name": "/infer"}
+        arg_names = ["prompt", "seed", "width", "height", "guidance_scale", "steps"]
+        # build args for logging without modifying arg_dict; map 'steps' to 'num_inference_steps'
+        args = []
+        for name in arg_names:
+            if name == "steps":
+                args.append(arg_dict.get("num_inference_steps"))
+            else:
+                args.append(arg_dict.get(name))
+        log_args = ", ".join(f"{name}: {value}" for name, value in zip(arg_names, args, strict=False))
         # i will manually ban users who type something offensive
         await self.bot.log_to_file(f"{ctx.author}, {log_args}, model: {model}", "log.txt")
         start_time = time.perf_counter()
-        if self.dev and model == "dev":
-            result = await self.bot.loop.run_in_executor(None, self.dev.predict, *args, "/infer")
+        if self.schnell and model == "schnell":
+            arg_dict.pop("guidance_scale", None)
+            result = await self.bot.loop.run_in_executor(None, self.schnell.predict, arg_dict)
         elif self.merged and model == "merged":
-            result = await self.bot.loop.run_in_executor(None, self.merged.predict, *args, "/infer")
-        elif self.schnell and model == "schnell":
-            args.remove(guidance_scale)
-            result = await self.bot.loop.run_in_executor(None, self.schnell.predict, *args, "/infer")
+            result = await self.bot.loop.run_in_executor(None, self.merged.predict, arg_dict)
+        elif self.dev and model == "dev":
+            result = await self.bot.loop.run_in_executor(None, self.dev.predict, arg_dict)
+        elif self.krea_dev and model == "krea-dev":
+            result = await self.bot.loop.run_in_executor(None, self.krea_dev.predict, arg_dict)
         else:
             return await ctx.send(f"Model {model} failed to load, try another one.", delete_after=10)
-        image_path, seed = result
-        if await self.bot.path_exists(image_path):
+        try:
+            json_data, seed = result
+            async with self.bot.session.get(json_data["url"]) as img_resp:
+                # maybe I should make unique file names in the future...
+                img_file = discord.File(io.BytesIO(await img_resp.read()), "image.webp")
             gen_time = time.perf_counter() - start_time
-            await ctx.send(f"Generated image in {gen_time:.2f} seconds, seed: {seed}", file=discord.File(image_path))
-            try:
-                os.remove(image_path)
-                folder = os.path.dirname(image_path)
-                if not os.listdir(folder):
-                    os.rmdir(folder)
-            except Exception as e:
-                await ctx.send(f"Error while cleaning up: {e}")
-        else:
-            await ctx.send("Sorry, there was an issue generating the image.")
+            await ctx.send(f"Generated image in {gen_time:.2f} seconds, seed: {seed}", file=img_file)
+        except Exception as e:
+            self.logger.exception(f"Error in image command: {e}")
+            await ctx.send(f"Sorry, there was an issue generating the image. {e}")
 
     def _trim(self, text: str, max_len: int = 500) -> str:
         if not text:
