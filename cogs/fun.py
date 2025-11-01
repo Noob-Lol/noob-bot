@@ -109,12 +109,13 @@ class FunCog(BaseCog):
             assert self.bot.owner_id
         is_owner = ctx.author.id == self.bot.owner_id
         owner_status = "Yes" if is_owner else "No"
+        prefix = self.bot.prefix
         bot_info = f"Bot User='{self.bot.user}', Server='{guild}', Channel='{channel}', User='{user}', User Owner='{owner_status}'"
         disclaimer = "Never invent Discord Nitro links; free Nitro is only from official Discord promotions."
         return (
             "You are a helpful Discord bot. Keep your answers short and to the point. "
             f"{disclaimer} Context: Bot name (you)='Noob Bot', {bot_info}, {sys_info}. "
-            "Bot command prefix is '>'. If a line begins with '>', treat it as a command, not general chat."
+            f"Bot command prefix is '{prefix}'. If a line begins with '{prefix}', treat it as a command, not general chat."
         )
 
     async def generate_message(self, client: openai.AsyncOpenAI, chat_model: str, ctx: Ctx, prompt: str):
@@ -132,7 +133,7 @@ class FunCog(BaseCog):
                     content = m.clean_content if hasattr(m, "clean_content") else m.content
                     if not content:
                         continue
-                    if content.strip().startswith(">"):
+                    if content.strip().startswith(self.bot.prefix):
                         continue
                     role = "assistant" if m.author.id == ctx.bot.user.id else "user"
                     author_name = getattr(m.author, "display_name", getattr(m.author, "name", "user"))

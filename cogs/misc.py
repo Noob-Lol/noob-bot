@@ -44,7 +44,7 @@ class MiscCog(BaseCog):
     @commands.cooldown(1, 30, commands.BucketType.user)
     async def a_bot_info(self, ctx: Ctx):
         embed = discord.Embed(title="Bot info", color=discord.Color.random())
-        embed.add_field(name="Prefix", value=f"/ (Slash) or {ctx.prefix}")
+        embed.add_field(name="Prefix", value=f"/ (Slash) or {self.bot.prefix}")
         embed.add_field(name="D.py version", value=discord.__version__)
         embed.add_field(name="Python version", value=platform.python_version())
         embed.add_field(name="Bot owner + dev", value="n01b")
