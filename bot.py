@@ -8,11 +8,11 @@ import aiofiles
 import aiohttp
 import anyio
 import discord
-import dotenv
 from aiohttp import web
 from async_pcloud import AsyncPyCloud
 from discord import app_commands
 from discord.ext import commands
+from dotenv import load_dotenv
 from pymongo import AsyncMongoClient
 
 if os.name == "nt" and not os.getenv("WT_SESSION"):
@@ -28,7 +28,7 @@ logging.getLogger("discord").setLevel(logging.INFO)
 my_loggers = [bot_name, "bot"]
 for logger in my_loggers:
     logging.getLogger(logger).setLevel(logging.INFO)
-dotenv.load_dotenv()
+load_dotenv()
 script_path = os.path.dirname(__file__)
 TOKEN = os.environ["TOKEN"]
 RTOKEN = os.getenv("RTOKEN")
@@ -368,7 +368,8 @@ async def needs_sync(bot: Bot, guild: discord.Object | None):
         if len(l_cmd.parameters) != len(r_cmd.options):
             return True
         for param, option in zip(l_cmd.parameters, r_cmd.options, strict=False):
-            if param.name != option.name or param.description != option.description:
+            comp_attrs = ["name", "description", "required"]
+            if any(getattr(param, attr) != getattr(option, attr) for attr in comp_attrs):
                 return True
     return False
 
