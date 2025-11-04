@@ -83,7 +83,8 @@ class Bot(commands.Bot):
 
     # bot events
     async def setup_hook(self):
-        self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(7), raise_for_status=True)
+        timeout, headers = aiohttp.ClientTimeout(7), {"User-Agent": f"{bot_name}/1.0"}
+        self.session = aiohttp.ClientSession(timeout=timeout, headers=headers, raise_for_status=True)
         global disabled_items
         guild_id = int(os.environ["GUILD_ID"]) if os.getenv("GUILD_ID") else None
         disabled_items = {}
@@ -171,6 +172,8 @@ class Bot(commands.Bot):
                 # await ctx.send("This command can only be used in a guild.", ephemeral=True)  # some commands may be allowed in dms
         elif isinstance(error, commands.DisabledCommand):
             await self.respond(ctx, f"{ctx.command} command is disabled.")
+        elif isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send(f"Command {ctx.command} failed, {error}")
         elif isinstance(error, discord.HTTPException) and error.status == 429:
             self.logger.warning(f"Rate limited. Retry in {error.response.headers['Retry-After']} seconds.", exc_info=error)
         elif isinstance(error, discord.HTTPException) and error.status == 400:

@@ -1,7 +1,7 @@
 discord-py
 python-dotenv
 pymongo
-gradio_client
+noob-gradio
 openai
 aiofiles
 pytz

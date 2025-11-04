@@ -6,7 +6,7 @@ import discord
 import openai
 from discord import app_commands
 from discord.ext import commands
-from gradio_client import Client
+from noob_gradio import Client
 
 from bot import BaseCog, Bot, Ctx
 
@@ -29,7 +29,7 @@ def split_response(response: str, max_length=1900):
 class FunCog(BaseCog):
     def __init__(self, bot: Bot):
         super().__init__(bot)
-        self.hf_token = bot.get_env("HF_TOKEN")
+        hf_token = bot.get_env("HF_TOKEN")
         base_url = bot.get_env("CHAT_API_BASE_URL")
         api_key = bot.get_env("CHAT_API_KEY")
         self.chat_model = bot.get_env("CHAT_MODEL")
@@ -41,31 +41,7 @@ class FunCog(BaseCog):
                 self.logger.exception(f"Failed to init chat client: {e}")
         else:
             self.logger.warning("CHAT_API_BASE_URL or CHAT_API_KEY not set; chat is disabled")
-        self.merged = self.dev = self.schnell = self.krea_dev = None
-
-    async def cog_load(self):
-        if not self.hf_token:
-            self.logger.warning("HF_TOKEN not configured; skipping model preloading")
-        else:
-            await self.bot.loop.run_in_executor(None, self.load_models)
-
-    def load_models(self):
-        models = {
-            "https://black-forest-labs-flux-1-schnell.hf.space": "schnell",
-            "https://multimodalart-flux-1-merged.hf.space": "merged",
-            "https://black-forest-labs-flux-1-dev.hf.space": "dev",
-            "https://black-forest-labs-flux-1-krea-dev.hf.space": "krea-dev",
-        }
-        for model, name in models.items():
-            self.bot.loop.run_in_executor(None, self.load_one, model, name)
-
-    def load_one(self, model_name, var_name):
-        try:
-            model = Client(model_name, self.hf_token, verbose=False, download_files=False)
-            setattr(self, var_name, model)
-        except Exception as e:
-            self.logger.error(f"Model {model_name} failed to load: {e}")
-            setattr(self, var_name, None)
+        self.img_client = Client(hf_token=hf_token, download_files=False)
 
     @commands.hybrid_command(name="cat", help="Sends a random cat image")
     async def cat(self, ctx: Ctx):
@@ -79,10 +55,8 @@ class FunCog(BaseCog):
         await ctx.send(f"**{ctx.author.name}** flipped a coin and it landed on **{random.choice(choices)}**")
 
     @commands.hybrid_command(name="random", help="Sends a random number")
-    async def random(self, ctx: Ctx, min: int | None, max: int | None):
-        if min is None or max is None:
-            await ctx.send("Input two numbers", delete_after=3)
-        elif min == max:
+    async def random(self, ctx: Ctx, min: int, max: int):
+        if min == max:
             await ctx.send("Numbers are equal", delete_after=3)
         else:
             if min > max:
@@ -202,35 +176,45 @@ class FunCog(BaseCog):
     async def image(self, ctx: Ctx, *, prompt: str, seed: int = 0, width: int = 1024, height: int = 1024,
                     guidance_scale: float = 3.5, steps: int = 4, model: str = "schnell"):
         await ctx.defer()
-        rand = True
+        arg_dict: dict = {"prompt": prompt, "api_name": "/infer"}
+        # Only add non-default values
         if seed != 0:
-            rand = False
-        arg_dict = {"prompt": prompt, "seed": seed, "randomize_seed": rand, "width": width, "height": height,
-                    "guidance_scale": guidance_scale, "num_inference_steps": steps, "api_name": "/infer"}
+            arg_dict.update({"seed": seed, "randomize_seed": False})
+        if width != 1024:
+            arg_dict["width"] = width
+        if height != 1024:
+            arg_dict["height"] = height
+        if guidance_scale != 3.5 and model != "schnell":
+            arg_dict["guidance_scale"] = guidance_scale
+        if steps != 4:
+            arg_dict["num_inference_steps"] = steps
+
         arg_names = ["prompt", "seed", "width", "height", "guidance_scale", "steps"]
         # build args for logging without modifying arg_dict; map 'steps' to 'num_inference_steps'
         args = []
         for name in arg_names:
+            if name not in arg_dict:
+                args.append(None)
             if name == "steps":
                 args.append(arg_dict.get("num_inference_steps"))
             else:
                 args.append(arg_dict.get(name))
-        log_args = ", ".join(f"{name}: {value}" for name, value in zip(arg_names, args, strict=False))
+        log_args = ", ".join(f"{name}: {value}" for name, value in zip(arg_names, args, strict=False) if value is not None)
         # i will manually ban users who type something offensive
         await self.bot.log_to_file(f"{ctx.author}, {log_args}, model: {model}", "log.txt")
+        supported_models = {
+            "schnell": "black-forest-labs/FLUX.1-schnell",
+            "merged": "multimodalart/FLUX.1-merged",
+            "dev": "black-forest-labs/FLUX.1-dev",
+            "krea-dev": "black-forest-labs/FLUX.1-Krea-dev",
+        }
+        chosen_model = supported_models.get(model)
+        if not chosen_model:
+            return await ctx.send(f"Model {model} is not supported.")
         start_time = time.perf_counter()
-        if self.schnell and model == "schnell":
-            arg_dict.pop("guidance_scale", None)
-            result = await self.bot.loop.run_in_executor(None, self.schnell.predict, arg_dict)
-        elif self.merged and model == "merged":
-            result = await self.bot.loop.run_in_executor(None, self.merged.predict, arg_dict)
-        elif self.dev and model == "dev":
-            result = await self.bot.loop.run_in_executor(None, self.dev.predict, arg_dict)
-        elif self.krea_dev and model == "krea-dev":
-            result = await self.bot.loop.run_in_executor(None, self.krea_dev.predict, arg_dict)
-        else:
-            return await ctx.send(f"Model {model} failed to load, try another one.", delete_after=10)
         try:
+            async with self.img_client as client:
+                result = await client.predict(src=chosen_model, **arg_dict)
             json_data, seed = result
             async with self.bot.session.get(json_data["url"]) as img_resp:
                 # maybe I should make unique file names in the future...
@@ -238,7 +222,7 @@ class FunCog(BaseCog):
             gen_time = time.perf_counter() - start_time
             await ctx.send(f"Generated image in {gen_time:.2f} seconds, seed: {seed}", file=img_file)
         except Exception as e:
-            self.logger.exception(f"Error in image command: {e}")
+            self.logger.exception(f"Error in image command during predict: {e}")
             await ctx.send(f"Sorry, there was an issue generating the image. {e}")
 
     def _trim(self, text: str, max_len: int = 500) -> str:
