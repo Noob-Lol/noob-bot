@@ -384,11 +384,15 @@ def p(desc, default=None):
 
 @bot.check
 async def check_guild(ctx: Ctx):
+    if await bot.is_owner(ctx.author):
+        return True
     return ctx.guild
 
 
 @bot.check
 async def check_channel(ctx: Ctx):
+    if await bot.is_owner(ctx.author):
+        return True
     if ctx.channel.id in disabled_items.get("channel", []) and ctx.command and ctx.command.name != "toggle":
         if ctx.interaction:
             await ctx.send("Bot commands are restricted in this channel.", ephemeral=True)
@@ -398,6 +402,8 @@ async def check_channel(ctx: Ctx):
 
 @bot.check
 async def check_user(ctx: Ctx):
+    if await bot.is_owner(ctx.author):
+        return True
     if ctx.author.id in disabled_items.get("user", []) and ctx.command and ctx.command.name != "toggle":
         if ctx.interaction:
             await ctx.send("Your access to bot commands is currently restricted.", ephemeral=True)
