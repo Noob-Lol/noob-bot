@@ -1,4 +1,5 @@
 import io
+import json
 import random
 import time
 
@@ -152,6 +153,7 @@ class FunCog(BaseCog):
             return await ctx.reply("Chat is not configured right now.")
         await ctx.defer()
         try:
+            # moderation is not required for chat, as the model should handle it itself
             async with ctx.typing():
                 msg = await self.generate_message(self.client, self.chat_model, ctx, prompt)
                 chunks = split_response(msg)
@@ -159,6 +161,39 @@ class FunCog(BaseCog):
                     await ctx.reply(chunk)
         except Exception as e:
             self.logger.exception(f"Error in ai_chat command: {e}")
+
+    async def moderate_text(self, input_text: str) -> tuple[bool, str]:
+        """
+        Moderates the prompt using some ai model.
+        Returns (is_safe, reason_if_unsafe)
+        """
+        if not self.client:
+            self.logger.warning("Moderation client not configured, skipping moderation")
+            return True, ""
+        try:
+            # this was made for nvidia api and this specific model
+            mod_model = "nvidia/llama-3.1-nemotron-safety-guard-8b-v3"
+            response = await self.client.chat.completions.create(model=mod_model, messages=[
+                {"role": "user", "content": input_text},
+            ])
+            result = response.choices[0].message.content
+            if not result:
+                self.logger.error("Empty response from moderation endpoint")
+                return False, ""
+            try:
+                result_json: dict = json.loads(result)
+            except json.JSONDecodeError:
+                self.logger.error(f"Failed to decode JSON from moderation response: {result}")
+                return False, ""
+            # Check for unsafe content
+            safety = result_json.get("User Safety")
+            if safety == "unsafe":
+                reason = result_json.get("Safety Categories", "No reason provided")
+                return False, reason
+            return True, ""
+        except Exception as e:
+            self.logger.exception(f"Error in prompt moderation: {e}")
+            return False, ""
 
     @commands.hybrid_command(name="image", help="Generates an image")
     @commands.cooldown(1, 30, commands.BucketType.user)
@@ -174,7 +209,7 @@ class FunCog(BaseCog):
             app_commands.Choice(name="krea-dev", value="krea-dev"),
         ])
     async def image(self, ctx: Ctx, *, prompt: str, seed: int = 0, width: int = 1024, height: int = 1024,
-                    guidance_scale: float = 3.5, steps: int = 4, model: str = "schnell"):
+                    guidance_scale: float = 3.5, steps: int = 4, model: str = "schnell") -> None:
         await ctx.defer()
         arg_dict: dict = {"prompt": prompt, "api_name": "/infer"}
         # Only add non-default values
@@ -200,8 +235,16 @@ class FunCog(BaseCog):
             else:
                 args.append(arg_dict.get(name))
         log_args = ", ".join(f"{name}: {value}" for name, value in zip(arg_names, args, strict=False) if value is not None)
-        # i will manually ban users who type something offensive
         await self.bot.log_to_file(f"{ctx.author}, {log_args}, model: {model}", "log.txt")
+        is_safe, reason = await self.moderate_text(prompt)
+        if not is_safe:
+            if not reason:
+                await ctx.send("Prompt moderation failed, please report to bot owner.")
+                return
+            await self.bot.log_to_file(f"Moderated prompt from {ctx.author}: {reason}", "log.txt")
+            await ctx.send(f"Your prompt was moderated. Reason: {reason}")
+            # if moderated - perma-ban or something?
+            return
         supported_models = {
             "schnell": "black-forest-labs/FLUX.1-schnell",
             "merged": "multimodalart/FLUX.1-merged",
@@ -210,7 +253,8 @@ class FunCog(BaseCog):
         }
         chosen_model = supported_models.get(model)
         if not chosen_model:
-            return await ctx.send(f"Model {model} is not supported.")
+            await ctx.send(f"Model {model} is not supported.")
+            return
         start_time = time.perf_counter()
         try:
             async with self.img_client as client:
