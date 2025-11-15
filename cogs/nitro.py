@@ -71,8 +71,8 @@ class NitroCog(BaseCog):
         psection_id = 22113084771863  # Promotions section
         resp = await self.bot.session.get(f"{base}?per_page=100")
         data = await resp.json()
-        # note: wemod made fake promo, so it will be excluded
-        exclusions = ["customers", "youtube", "game pass ultimate", "wemod"]
+        # note: WeMod (now Wand) made fake promo, so it will be excluded
+        exclusions = ["customers", "youtube", "game pass ultimate", "wemod", "wand"]
         for article in data["articles"]:
             if article["section_id"] != psection_id:
                 continue
@@ -126,7 +126,7 @@ class NitroCog(BaseCog):
         await self.nitro_usage.update_one({"user_id": user.id, "date": today_dt}, {"$inc": {"count": amount}}, upsert=True)
         return True
 
-    @commands.hybrid_command(name="nitro", help="Sends a free nitro link")
+    @commands.hybrid_command(name="nitro", help="Sends a free nitro link", aliases=["promo"])
     @commands.cooldown(1, 5, commands.BucketType.user)
     @app_commands.describe(amount=desc1, place=desc2)
     @app_commands.choices(
