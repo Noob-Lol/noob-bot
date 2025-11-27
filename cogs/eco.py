@@ -41,7 +41,8 @@ class EconomyCog(BaseCog):
         else:
             new_bal = amount
             await self.eco.insert_one({"_id": user_id, "balance": new_bal})
-        await ctx.send(f"{ctx.author.mention}, you have been given {amount:g} {self.bot.currency}! Your new balance is {new_bal:g}.")
+        amount_cur = f"{amount:g} {self.bot.currency}"
+        await ctx.send(f"{ctx.author.mention}, you have been given {amount_cur}! Your new balance is {new_bal:g}.")
 
     @commands.hybrid_command(name="dash", help="Get your personal dashboard link")
     async def dashboard(self, ctx: Ctx):
@@ -54,7 +55,7 @@ class EconomyCog(BaseCog):
         await self.auth_tokens_coll.insert_one({
             "_id": token,
             "discord_id": discord_id,
-            "created_at": datetime.datetime.now(datetime.timezone.utc),
+            "created_at": self.bot.now_utc(),
         })
         url = f"{self.dash_url}/{token}"
         await self.bot.respond(ctx, f"Here is your dashboard link: [Click](<{url}>)")
@@ -82,7 +83,8 @@ class EconomyCog(BaseCog):
             new_bal = amount
             await self.eco.insert_one({"_id": user_id, "balance": new_bal})
         await self.eco.update_one({"_id": author.id}, {"$inc": {"balance": -amount}})
-        await ctx.send(f"**{author.name}** gave **{user.name}** {amount:g} {self.bot.currency}. Their new balance is {new_bal:g}.")
+        amount_cur = f"{amount:g} {self.bot.currency}"
+        await ctx.send(f"**{author.name}** gave **{user.name}** {amount_cur}. Their new balance is {new_bal:g}.")
 
     @commands.hybrid_command(name="set_balance", help="Sets the user's balance to a specific amount")
     @commands.has_permissions(administrator=True)
@@ -157,8 +159,10 @@ class EconomyCog(BaseCog):
                 nonlocal current_page
                 current_page += 1
                 await update_embed(interaction, current_page)
+
             prev_button.callback, next_button.callback = prev_callback, next_callback
             return View(timeout=60).add_item(prev_button).add_item(next_button)
+
         await ctx.send(embed=build_embed(current_page), view=build_view(current_page))
 
     @tasks.loop(hours=24)

@@ -17,11 +17,9 @@ def p(desc, default=None):
 desc1, desc2 = "How many codes", "Where to send"
 promos_link = "https://support.discord.com/hc/en-us/sections/22113084771863-Promotions"
 no_active_promo_str = f"There is no active nitro promotion. Check yourself: [Support page](<{promos_link}>)"
-tz_map = {
-    "PT": "US/Pacific", "PST": "US/Pacific", "PDT": "US/Pacific",
-    "ET": "US/Eastern", "EST": "US/Eastern", "EDT": "US/Eastern",
-    "UTC": "UTC", "GMT": "GMT",
-}
+tz_map = {"UTC": "UTC", "GMT": "GMT"}
+tz_map.update(dict.fromkeys(["PT", "PST", "PDT"], "US/Pacific"))
+tz_map.update(dict.fromkeys(["ET", "EST", "EDT"], "US/Eastern"))
 
 
 class NitroCog(BaseCog):
@@ -54,16 +52,45 @@ class NitroCog(BaseCog):
         self.update_embed.start()
 
     def parse_date(self, text: str) -> datetime.datetime:
-        """Parse promo dates like 'January 1, 2024 (12:00AM PST)' into UTC datetime."""
-        match = re.search(r"([A-Za-z]+\s+\d{1,2},\s+\d{4})\s+\((\d{1,2}:\d{2}[APMapm]{2})\s*([A-Z]{2,4})\)", text)
+        """Parse promo dates like 'January 1, 2024 (12:00AM PST)' or '(12AM PST)' into UTC datetime."""
+        match = re.search(r"([A-Za-z]+\s+\d{1,2},\s+\d{4})\s+\((\d{1,2}(?::\d{2})?[APMapm]{2})\s*([A-Z]{2,4})\)", text)
         if not match:
             raise ValueError(f"Unparsable datetime: {text}")
         date_part, time_part, tz_abbr = match.groups()
         tz = tz_map.get(tz_abbr.upper())
         if not tz:
             raise ValueError(f"Unknown timezone: {tz_abbr}")
-        dt_obj = datetime.datetime.strptime(f"{date_part} {time_part.upper()}", "%B %d, %Y %I:%M%p")
+        time_part_up = time_part.upper()
+        # choose appropriate strptime format depending on whether minutes are present
+        if ":" in time_part_up:
+            fmt = "%B %d, %Y %I:%M%p"
+        else:
+            fmt = "%B %d, %Y %I%p"
+        dt_obj = datetime.datetime.strptime(f"{date_part} {time_part_up}", fmt)
         return pytz.timezone(tz).localize(dt_obj).astimezone(datetime.timezone.utc)
+
+    def fix_date(self, strongs: list[str]) -> list[str]:
+        """This returns a fixed start/end date from 2 or 4 strongs."""
+        if not strongs:
+            return []
+        first_four = strongs[:4]
+        # print(first_four)
+        # find date parts in first 2-4 strongs and combine "January 1, 2024" and "(12:00AM PST)" or "(12AM PST)" if it's split
+        date_parts = []
+        for s in first_four:
+            if re.search(r"[A-Za-z]+\s+\d{1,2},\s+\d{4}", s) and s not in date_parts:
+                date_parts.append(s)
+            elif re.search(r"\(\d{1,2}:\d{2}[APMapm]{2}\s*[A-Z]{2,4}\)", s) or re.search(r"\(\d{1,2}[APMapm]{2}\s*[A-Z]{2,4}\)", s):
+                if date_parts:
+                    date_parts[-1] += f" {s}"
+                else:
+                    date_parts.append(s)
+        # print(date_parts)
+        if len(date_parts) == 2:
+            return [date_parts[0], date_parts[1]]
+        else:
+            self.logger.warning(f"Could not fix date from strongs: {first_four}, found parts: {date_parts}")
+        return []
 
     async def get_active_promo(self):
         """Fetch promotions via JSON API and return active Nitro promo, or False."""
@@ -73,6 +100,7 @@ class NitroCog(BaseCog):
         data = await resp.json()
         # note: WeMod (now Wand) made fake promo, so it will be excluded
         exclusions = ["customers", "youtube", "game pass ultimate", "wemod", "wand"]
+        valid_promos = []
         for article in data["articles"]:
             if article["section_id"] != psection_id:
                 continue
@@ -80,20 +108,21 @@ class NitroCog(BaseCog):
             if any(ex in name.lower() for ex in exclusions):
                 continue
             body_html = article["body"]
-            if "Nitro promotion is free" not in body_html:
+            if "Nitro promotion is free" not in body_html or "purchase" in body_html:
                 continue
             strongs = re.findall(r"<strong>(.*?)</strong>", body_html, flags=re.S)
             if len(strongs) < 2:
                 continue
             try:
-                start, end = map(self.parse_date, strongs[:2])
-            except ValueError:
+                start, end = map(self.parse_date, self.fix_date(strongs))
+            except ValueError as e:
+                self.logger.warning(f"date_parse error for: {name}: {e}")
                 continue
-            now = datetime.datetime.now(datetime.timezone.utc)
+            now = self.bot.now_utc()
             if start <= now <= end:
                 time_left = str(end - now).split(".")[0]
-                return {"name": name, "url": article["html_url"], "time_left": time_left}
-        return False
+                valid_promos.append({"name": name, "url": article["html_url"], "time_left": time_left})
+        return valid_promos if valid_promos else False
 
     async def old_nitro_check(self, ctx: Ctx, amount: int, guild: discord.Guild, user: discord.Member):
         # old nitro system
@@ -302,6 +331,7 @@ class NitroCog(BaseCog):
             else:
                 mult = 1
             return f"Your usage is {count}/{self.nitro_limit * mult}."
+
         boost_count = await self.bot.check_boost(guild, member)
         if boost_count == -1:
             await ctx.send("There was an error getting your boost count.")
@@ -329,12 +359,14 @@ class NitroCog(BaseCog):
             return await self.bot.respond(ctx, "Nitro commands are disabled.")
         if not self.active_promo:
             return await self.bot.respond(ctx, no_active_promo_str)
-        if not isinstance(self.active_promo, dict):
-            return await self.bot.respond(ctx, "active_promo is not a dict.")
-        await ctx.send(
-            f"**Found an Active Free Nitro Promo!**\nName+link: [{self.active_promo['name']}]({self.active_promo['url']})\n"
-            f"Time left: {self.active_promo['time_left']}",
-        )
+        if not isinstance(self.active_promo, list):
+            return await self.bot.respond(ctx, "active_promo is not a list.")
+        # all promos in one message
+        promo_messages = []
+        promo_messages.append(f"Found {len(self.active_promo)} Active Free Nitro Promos!")
+        for promo in self.active_promo:
+            promo_messages.append(f"Title: [{promo['name']}](<{promo['url']}>)\nTime left: {promo['time_left']}")
+        await ctx.send("\n".join(promo_messages))
 
     @tasks.loop(minutes=5)
     async def update_embed(self):
@@ -361,8 +393,7 @@ class NitroCog(BaseCog):
                 message_id = setting["message_id"]
                 channel = self.bot.get_channel(channel_id)
                 if channel and isinstance(channel, discord.TextChannel):
-                    ts = datetime.datetime.now()
-                    embed = discord.Embed(title=title, description=desc, color=discord.Color.random(), timestamp=ts)
+                    embed = discord.Embed(title=title, description=desc, color=discord.Color.random(), timestamp=self.bot.now_utc())
                     embed.add_field(name="Servers", value=f"{guild_count}")
                     embed.add_field(name="Users", value=f"{user_count}")
                     embed.add_field(name="Ping", value=f"{ping} ms")
@@ -382,7 +413,7 @@ class NitroCog(BaseCog):
         except Exception as e:
             self.logger.exception(f"Failed to update embed: {e}")
 
-    @commands.command(name="embe", help="Enable embed updates in the current channel.")
+    @commands.hybrid_command(name="embe", help="Enable embed updates in the current channel.")
     @commands.is_owner()
     async def enable_embed(self, ctx: Ctx):
         guild, channel = self.bot.verify_guild_channel(ctx.guild, ctx.channel)

@@ -19,6 +19,7 @@ if os.name == "nt" and not os.getenv("WT_SESSION"):
     try:
         # this fixes logger colors on windows
         from colorama import just_fix_windows_console
+
         just_fix_windows_console()
         os.environ["WT_SESSION"] = "bruh"
     except ImportError:
@@ -39,10 +40,13 @@ pcloud = AsyncPyCloud(PTOKEN, folder=folder)
 uri = os.environ["MONGODB_URI"]
 client = AsyncMongoClient(uri)
 db = client["discord_bot"]
+disabled_items = {"type init": set()}
+disabled_items.clear()
 
 
 class CustomContext(commands.Context):
     """Custom commands.Context class with extra stuff"""
+
     # TODO: add more functions or attributes
     unhandled_error: bool | None = None
 
@@ -85,9 +89,9 @@ class Bot(commands.Bot):
     async def setup_hook(self):
         timeout, headers = aiohttp.ClientTimeout(7), {"User-Agent": f"{bot_name}/1.0"}
         self.session = aiohttp.ClientSession(timeout=timeout, headers=headers, raise_for_status=True)
+        await pcloud.connect()
         global disabled_items
         guild_id = int(os.environ["GUILD_ID"]) if os.getenv("GUILD_ID") else None
-        disabled_items = {}
         async for item in db["disabled_items"].find():
             if item["thing"] not in disabled_items:
                 disabled_items[item["thing"]] = set()
@@ -120,11 +124,14 @@ class Bot(commands.Bot):
         app = web.Application()
 
         def count_values():
-            return (f"Guilds: {len(self.guilds)}, Users: {len(self.users)}, "
-                    f"Commands: {len(self.commands)}, Cogs: {len(self.cogs)}, Ping: {round(self.latency * 1000)}ms")
+            return (
+                f"Guilds: {len(self.guilds)}, Users: {len(self.users)}, "
+                f"Commands: {len(self.commands)}, Cogs: {len(self.cogs)}, Ping: {round(self.latency * 1000)}ms"
+            )
 
         async def web_status(_):
             return web.Response(text=f"Bot is running as {self.user}, {count_values()}")
+
         app.router.add_get("/", web_status)
         runner = web.AppRunner(app)
         await runner.setup()
@@ -191,6 +198,7 @@ class Bot(commands.Bot):
     async def close(self):
         await super().close()
         await self.session.close()
+        await pcloud.disconnect()
         self.logger.info("Bye!")
         await client.aclose()
 
@@ -209,8 +217,7 @@ class Bot(commands.Bot):
                 raise Exception("Not found in local storage.")
             async with aiofiles.open(f"{script_path}/{file}") as f:
                 return await f.read()
-        async with pcloud:
-            file_text = await pcloud.gettextfile(not_found_ok, path=file)
+        file_text = await pcloud.gettextfile(not_found_ok, path=file)
         if file_text is None:
             if not_found_ok:
                 return ""
@@ -223,8 +230,7 @@ class Bot(commands.Bot):
             async with aiofiles.open(f"{script_path}/{filename}", "w") as f:
                 await f.write(content)
             return
-        async with pcloud:
-            r = await pcloud.upload_one_file(filename, content, path="/")
+        r = await pcloud.upload_one_file(filename, content, path="/")
         if r.get("error"):
             raise Exception(r["error"])
 
@@ -324,6 +330,10 @@ class Bot(commands.Bot):
     def get_env(self, key, default: str | None = None):
         """Get an environment variable."""
         return os.getenv(key, default)
+
+    def now_utc(self):
+        """Get the current time in UTC."""
+        return datetime.datetime.now(datetime.timezone.utc)
 
 
 class BaseCog(commands.Cog):
@@ -475,16 +485,13 @@ async def toggle_thing(ctx: Ctx, thing: str = p(descripts["thing"]), name: str |
         await bot.respond(ctx, "Invalid thing choice.")
 
 
-async def disable_item(ctx: Ctx, thing: str, id: str | int):
-    bot.logger.info(f"{thing} {id} by {ctx.author}")
-    await db["disabled_items"].insert_one({
-        "thing": thing, "item_id": id,
-        "disabled_at": datetime.datetime.now(datetime.timezone.utc),
-        "disabled_by": ctx.author.id,
-    })
+async def disable_item(ctx: Ctx, thing: str, item_id: str | int):
+    bot.logger.info(f"{thing} {item_id} by {ctx.author}")
+    doc = {"thing": thing, "item_id": item_id, "disabled_at": bot.now_utc(), "disabled_by": ctx.author.id}
+    await db["disabled_items"].insert_one(doc)
     if thing not in disabled_items:
         disabled_items[thing] = set()
-    disabled_items[thing].add(id)
+    disabled_items[thing].add(item_id)
 
 
 async def enable_item(ctx: Ctx, thing: str, item_id: str | int):
