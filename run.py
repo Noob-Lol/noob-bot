@@ -1,6 +1,4 @@
-import logging
-
-from bot import TOKEN, bot
+from bot import run_bot
 
 if __name__ == "__main__":
-    bot.run(TOKEN, log_level=logging.WARNING, root_logger=True)
+    run_bot()

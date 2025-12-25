@@ -91,30 +91,30 @@ class MiscCog(BaseCog):
             "X-RapidAPI-Host": "weatherapi-com.p.rapidapi.com",
         }
         url = "https://weatherapi-com.p.rapidapi.com/forecast.json"
-        async with self.bot.session.get(url, headers=headers, params={"q": city, "days": "3"}) as response:
-            if response.status != 200:
-                await ctx.send("Failed to fetch weather data.")
-                self.logger.error(f"Weather API request failed with status {response.status}")
+        try:
+            async with self.bot.session.get(url, headers=headers, params={"q": city, "days": "3"}) as response:
+                weather: dict = await response.json()
+            bad_json = {"message": "This endpoint is disabled for your subscription"}
+            if weather == bad_json:
+                await ctx.send("This api key is cooked, owner needs to get a new one")
+                self.logger.error("Weather API key is cooked")
                 return
-            weather = await response.json()
-        bad_json = {"message": "This endpoint is disabled for your subscription"}
-        if weather == bad_json:
-            await ctx.send("This api key is cooked, owner needs to get a new one")
-            self.logger.error("Weather API key is cooked")
-            return
-        title = f"Weather in {weather['location']['name']}, {weather['location']['country']}"
-        embed = discord.Embed(title=title, color=discord.Color.blue())
-        embed.add_field(name="Local Time", value=weather["location"]["localtime"], inline=False)
-        embed.add_field(name="Temperature", value=f"{weather['current']['temp_c']}℃")
-        embed.add_field(name="Condition", value=weather["current"]["condition"]["text"])
-        embed.add_field(name="Wind Speed", value=f"{weather['current']['wind_kph']} kph")
-        embed.add_field(name="Feels like", value=f"{weather['current']['feelslike_c']}℃")
-        for i in range(3):
-            forecast = weather["forecast"]["forecastday"][i]
-            temp = f"Temp: {forecast['day']['maxtemp_c']} ~ {forecast['day']['mintemp_c']}℃"
-            rain = f"rain chance: {forecast['day']['daily_chance_of_rain']}"
-            embed.add_field(name=forecast["date"], value=f"{temp}, {rain}", inline=False)
-        await ctx.send(embed=embed)
+            title = f"Weather in {weather['location']['name']}, {weather['location']['country']}"
+            embed = discord.Embed(title=title, color=discord.Color.blue())
+            embed.add_field(name="Local Time", value=weather["location"]["localtime"], inline=False)
+            embed.add_field(name="Temperature", value=f"{weather['current']['temp_c']}℃")
+            embed.add_field(name="Condition", value=weather["current"]["condition"]["text"])
+            embed.add_field(name="Wind Speed", value=f"{weather['current']['wind_kph']} kph")
+            embed.add_field(name="Feels like", value=f"{weather['current']['feelslike_c']}℃")
+            for i in range(3):
+                forecast = weather["forecast"]["forecastday"][i]
+                temp = f"Temp: {forecast['day']['maxtemp_c']} ~ {forecast['day']['mintemp_c']}℃"
+                rain = f"rain chance: {forecast['day']['daily_chance_of_rain']}"
+                embed.add_field(name=forecast["date"], value=f"{temp}, {rain}", inline=False)
+            await ctx.send(embed=embed)
+        except Exception as e:
+            self.logger.error(f"Failed to get data: {e}")
+            await ctx.send(f"Failed to get weather data: {e}")
 
     @commands.hybrid_command(name="log", help="Logs a message to the log file")
     @commands.is_owner()

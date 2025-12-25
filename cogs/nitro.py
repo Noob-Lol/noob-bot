@@ -28,9 +28,8 @@ class NitroCog(BaseCog):
         self.nitro_usage = bot.db["nitro_usage"]
         self.eco = bot.db["economy"]
         self.embed_settings = bot.db["embed_settings"]
+        self.promo_exclusions = bot.db["promo_exclusions"]
         self.active_promo = False
-        self.check_promos.start()
-        self.cleanup_old_usage.start()
 
     async def cog_load(self):
         # load variables in async
@@ -49,6 +48,8 @@ class NitroCog(BaseCog):
             self.logger.warning("Using old nitro system.")
 
     async def cog_on_ready(self):
+        self.check_promos.start()
+        self.cleanup_old_usage.start()
         self.update_embed.start()
 
     def parse_date(self, text: str) -> datetime.datetime:
@@ -96,10 +97,14 @@ class NitroCog(BaseCog):
         """Fetch promotions via JSON API and return active Nitro promo, or False."""
         base = "https://support.discord.com/api/v2/help_center/en-us/articles.json"
         psection_id = 22113084771863  # Promotions section
-        resp = await self.bot.session.get(f"{base}?per_page=100")
-        data = await resp.json()
-        # note: WeMod (now Wand) made fake promo, so it will be excluded
-        exclusions = ["customers", "youtube", "game pass ultimate", "wemod", "wand"]
+        async with self.bot.session.get(f"{base}?per_page=100") as resp:
+            data = await resp.json()
+        # Clean up expired auto-hide entries
+        now = self.bot.now_utc()
+        await self.promo_exclusions.delete_many({"auto_hide_until": {"$lt": now}})
+        # Get current exclusions (both manual and auto-hide that haven't expired)
+        excluded_promos = self.promo_exclusions.find({"$or": [{"manually_hidden": True}, {"auto_hide_until": {"$gte": now}}]})
+        exclusions = [doc["promo_name"] async for doc in excluded_promos]
         valid_promos = []
         for article in data["articles"]:
             if article["section_id"] != psection_id:
@@ -460,6 +465,76 @@ class NitroCog(BaseCog):
         self.new_nitro_system = not self.new_nitro_system
         await self.bot.counter.update_one({"_id": "new_nitro_system"}, {"$set": {"state": self.new_nitro_system}}, upsert=True)
         await self.bot.respond(ctx, f"New nitro system {'enabled' if self.new_nitro_system else 'disabled'}")
+
+    async def promo_autocomplete(self, interaction: discord.Interaction, current: str):
+        """Autocomplete for active and hidden promo names."""
+        choices = []
+        # Get active promos
+        if self.active_promo and isinstance(self.active_promo, list):
+            for promo in self.active_promo:
+                name = promo["name"]
+                if current.lower() in name.lower():
+                    choices.append(app_commands.Choice(name=name[:100], value=name))
+        # Get hidden promos
+        hidden_promos = self.promo_exclusions.find({})
+        async for doc in hidden_promos:
+            promo_name = doc["promo_name"]
+            if current.lower() in promo_name.lower():
+                choice_name = f"{promo_name} (hidden)"[:100]
+                choices.append(app_commands.Choice(name=choice_name, value=promo_name))
+        return choices[:25]
+
+    @commands.hybrid_command(name="togglepromo", help="Hide/unhide a promo from the list.")
+    @commands.is_owner()
+    @app_commands.autocomplete(promo_name=promo_autocomplete)
+    async def togglepromo(self, ctx: Ctx, promo_name: str, auto_hide: bool = p("Auto-hide until promo expires?", True)):
+        """Toggles a promo in the exclusion list. Can auto-hide until the promo duration ends."""
+        promo_name_lower = promo_name.lower()
+        existing = await self.promo_exclusions.find_one({"promo_name": promo_name_lower})
+        if existing and existing.get("manually_hidden"):
+            # If manually hidden, unhide it
+            await self.promo_exclusions.delete_one({"promo_name": promo_name_lower})
+            await ctx.send(f"Promo '{promo_name}' has been unhidden.")
+        else:
+            # Hide the promo
+            hide_data = {
+                "promo_name": promo_name_lower,
+                "added_at": self.bot.now_utc(),
+                "manually_hidden": True,
+            }
+            # If auto_hide is enabled and promo is active, set auto_hide_until to promo end time
+            if auto_hide and isinstance(self.active_promo, list):
+                for promo in self.active_promo:
+                    if promo["name"].lower() == promo_name_lower:
+                        try:
+                            # Parse the time_left and calculate end time
+                            time_left_parts = promo["time_left"].split(":")
+                            if len(time_left_parts) == 3:
+                                hours, minutes, seconds = map(int, time_left_parts)
+                                end_time = self.bot.now_utc() + datetime.timedelta(hours=hours, minutes=minutes, seconds=seconds)
+                                hide_data["auto_hide_until"] = end_time
+                        except (ValueError, IndexError):
+                            pass
+                        break
+            if existing:
+                await self.promo_exclusions.update_one({"promo_name": promo_name_lower}, {"$set": hide_data})
+            else:
+                await self.promo_exclusions.insert_one(hide_data)
+            status = "auto-hidden until it expires" if hide_data.get("auto_hide_until") else "hidden"
+            await self.bot.respond(ctx, f"Promo '{promo_name}' has been {status}.")
+        # Refresh active promo list
+        self.active_promo = await self.get_active_promo()
+
+    @commands.hybrid_command(name="hiddenpromos", help="List all hidden promos.")
+    @commands.is_owner()
+    async def hiddenpromos(self, ctx: Ctx):
+        """Lists all hidden promos."""
+        hidden_list = self.promo_exclusions.find({})
+        names = [doc["promo_name"] async for doc in hidden_list]
+        if not names:
+            await ctx.send("There are no hidden promos.")
+        else:
+            await ctx.send("Hidden promos:\n- " + "\n- ".join(names))
 
 
 async def setup(bot: Bot):

@@ -226,7 +226,6 @@ class FunCog(BaseCog):
             # not critical, probably invalid parameters
             await ctx.send(f"Sorry, there was an issue generating the image. {e}")
         except Exception as e:
-            self.logger.exception(f"Error in image command during predict: {e}")
             self.logger.exception(f"Error during predict: {e}")
             await ctx.send(f"Sorry, there was an issue generating the image. {e}")
 

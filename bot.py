@@ -59,7 +59,9 @@ class GuildOnly(commands.CheckFailure):
 
 
 class Bot(commands.Bot):
+    """Custom Bot class with extra stuff"""
     def __init__(self):
+        self._closers = [client.aclose]
         intents = discord.Intents.all()
         self.prefix = ">"
         super().__init__(command_prefix=commands.when_mentioned_or(self.prefix), intents=intents)
@@ -89,7 +91,8 @@ class Bot(commands.Bot):
     async def setup_hook(self):
         timeout, headers = aiohttp.ClientTimeout(7), {"User-Agent": f"{bot_name}/1.0"}
         self.session = aiohttp.ClientSession(timeout=timeout, headers=headers, raise_for_status=True)
-        await pcloud.connect()
+        self._closers.append(self.session.close)
+        pcloud.set_session(self.session)
         global disabled_items
         guild_id = int(os.environ["GUILD_ID"]) if os.getenv("GUILD_ID") else None
         async for item in db["disabled_items"].find():
@@ -130,9 +133,13 @@ class Bot(commands.Bot):
             )
 
         async def web_status(_):
+            return web.Response(text="OK")
+
+        async def bot_info(_):
             return web.Response(text=f"Bot is running as {self.user}, {count_values()}")
 
         app.router.add_get("/", web_status)
+        app.router.add_get("/info", bot_info)
         runner = web.AppRunner(app)
         await runner.setup()
         host, port = "0.0.0.0", os.getenv("SERVER_PORT") or os.getenv("PORT") or 8000
@@ -142,7 +149,7 @@ class Bot(commands.Bot):
             self.logger.error(f"Port {port} is already in use")
 
     async def on_ready(self):
-        await self.change_presence(activity=discord.CustomActivity(name='I\'m cool 😎, ">" prefix'))
+        await self.change_presence(activity=discord.CustomActivity(name="I'm cool 😎, '>' prefix"))
         self.logger.info(f"Logged in as {self.user}")
 
     async def on_message(self, message: discord.Message):
@@ -179,7 +186,7 @@ class Bot(commands.Bot):
                 # await ctx.send("This command can only be used in a guild.", ephemeral=True)  # some commands may be allowed in dms
         elif isinstance(error, commands.DisabledCommand):
             await self.respond(ctx, f"{ctx.command} command is disabled.")
-        elif isinstance(error, commands.MissingRequiredArgument):
+        elif isinstance(error, (commands.MissingRequiredArgument, commands.BadArgument)):
             await ctx.send(f"Command {ctx.command} failed, {error}")
         elif isinstance(error, discord.HTTPException) and error.status == 429:
             self.logger.warning(f"Rate limited. Retry in {error.response.headers['Retry-After']} seconds.", exc_info=error)
@@ -197,10 +204,18 @@ class Bot(commands.Bot):
 
     async def close(self):
         await super().close()
-        await self.session.close()
-        await pcloud.disconnect()
+        # insanely genius way to close stuff
+        coros = []
+        for closer in self._closers:
+            try:
+                coros.append(closer() if callable(closer) else closer)
+            except Exception as e:
+                self.logger.error(f"Error creating close coro for {closer}: {e}")
+        results = await asyncio.gather(*coros, return_exceptions=True) if coros else []
+        for result in results:
+            if isinstance(result, Exception):
+                self.logger.error(f"Error during closing: {result}")
         self.logger.info("Bye!")
-        await client.aclose()
 
     # custom functions
     async def path_exists(self, path: str):
@@ -230,9 +245,9 @@ class Bot(commands.Bot):
             async with aiofiles.open(f"{script_path}/{filename}", "w") as f:
                 await f.write(content)
             return
-        r = await pcloud.upload_one_file(filename, content, path="/")
-        if r.get("error"):
-            raise Exception(r["error"])
+        resp = await pcloud.upload_one_file(filename, content, path="/")
+        if resp.get("error"):
+            raise Exception(resp["error"])
 
     async def log_to_file(self, text: str, file: str):
         """Append text to a file."""
@@ -277,24 +292,21 @@ class Bot(commands.Bot):
                 return 0
             if not RTOKEN:
                 raise Exception("RTOKEN not found.")
-            url = f"https://discord.com/api/v10/guilds/{guild.id}/premium/subscriptions"
-            response = await self.session.get(url, headers={"authorization": RTOKEN})
-            if response.status != 200:
-                self.logger.error(f"Error getting boost count for guild {guild.id}: {response.status}")
-                return -1
-            response = await response.json()
-            if isinstance(response, list):
+            url = f"https://discord.com/api/v10/guilds/{guild.id}/premium/subscriptions/a"
+            async with await self.session.get(url, headers={"authorization": RTOKEN}) as response:
+                resp_json = await response.json()
+            if isinstance(resp_json, list):
                 boost_count = 0
-                for boost in response:
+                for boost in resp_json:
                     user_id = boost["user"]["id"]
                     if int(user_id) == member.id:
                         boost_count += 1
                 return boost_count
             else:
-                self.logger.error(f"Error getting boost count for user {member.id}: {response}")
+                self.logger.error(f"Error for user {member.id}: {resp_json}")
                 return -1
         except Exception as e:
-            self.logger.error(f"Error checking boost for guild {guild.id}, member {member.id}: {e}")
+            self.logger.error(f"Error for guild {guild.id}, member {member.id}: {e}")
             return -1
 
     async def respond(self, ctx: Ctx, text: str, delete_after=5, ephemeral=True, del_cmd=True):
@@ -337,6 +349,7 @@ class Bot(commands.Bot):
 
 
 class BaseCog(commands.Cog):
+    """Base class for cogs with extra stuff"""
     def __init__(self, bot: Bot):
         self.bot = bot
         self._ready = False
@@ -581,5 +594,10 @@ async def sync(ctx: Ctx):
     await ctx.send("Synced!", delete_after=3)
 
 
-if __name__ == "__main__":
+def run_bot():
+    """Run the bot."""
     bot.run(TOKEN, log_level=logging.WARNING, root_logger=True)
+
+
+if __name__ == "__main__":
+    run_bot()

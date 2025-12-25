@@ -44,7 +44,7 @@ class EconomyCog(BaseCog):
         amount_cur = f"{amount:g} {self.bot.currency}"
         await ctx.send(f"{ctx.author.mention}, you have been given {amount_cur}! Your new balance is {new_bal:g}.")
 
-    @commands.hybrid_command(name="dash", help="Get your personal dashboard link")
+    @commands.hybrid_command(name="dash", help="Get your personal dashboard login link")
     async def dashboard(self, ctx: Ctx):
         if not self.dash_url:
             return await ctx.send("Dashboard link is not set.")
@@ -58,7 +58,7 @@ class EconomyCog(BaseCog):
             "created_at": self.bot.now_utc(),
         })
         url = f"{self.dash_url}/{token}"
-        await self.bot.respond(ctx, f"Here is your dashboard link: [Click](<{url}>)")
+        await self.bot.respond(ctx, f"Here is your dashboard login link: [Click](<{url}>)")
 
     @commands.hybrid_command(name="give", help="Give currency to another user")
     @commands.cooldown(1, 10, commands.BucketType.user)
