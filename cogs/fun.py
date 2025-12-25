@@ -1,5 +1,4 @@
 import io
-import json
 import random
 import time
 
@@ -42,7 +41,7 @@ class FunCog(BaseCog):
                 self.logger.exception(f"Failed to init chat client: {e}")
         else:
             self.logger.warning("CHAT_API_BASE_URL or CHAT_API_KEY not set; chat is disabled")
-        self.img_client = Client(hf_token=hf_token, download_files=False)
+        self.img_client = Client(hf_token=hf_token, download_files=False, session=bot.session)
 
     @commands.hybrid_command(name="cat", help="Sends a random cat image")
     async def cat(self, ctx: Ctx):
@@ -162,39 +161,6 @@ class FunCog(BaseCog):
         except Exception as e:
             self.logger.exception(f"Error in ai_chat command: {e}")
 
-    async def moderate_text(self, input_text: str) -> tuple[bool, str]:
-        """
-        Moderates the prompt using some ai model.
-        Returns (is_safe, reason_if_unsafe)
-        """
-        if not self.client:
-            self.logger.warning("Moderation client not configured, skipping moderation")
-            return True, ""
-        try:
-            # this was made for nvidia api and this specific model
-            mod_model = "nvidia/llama-3.1-nemotron-safety-guard-8b-v3"
-            response = await self.client.chat.completions.create(model=mod_model, messages=[
-                {"role": "user", "content": input_text},
-            ])
-            result = response.choices[0].message.content
-            if not result:
-                self.logger.error("Empty response from moderation endpoint")
-                return False, ""
-            try:
-                result_json: dict = json.loads(result)
-            except json.JSONDecodeError:
-                self.logger.error(f"Failed to decode JSON from moderation response: {result}")
-                return False, ""
-            # Check for unsafe content
-            safety = result_json.get("User Safety")
-            if safety == "unsafe":
-                reason = result_json.get("Safety Categories", "No reason provided")
-                return False, reason
-            return True, ""
-        except Exception as e:
-            self.logger.exception(f"Error in prompt moderation: {e}")
-            return False, ""
-
     @commands.hybrid_command(name="image", help="Generates an image")
     @commands.cooldown(1, 30, commands.BucketType.user)
     @app_commands.describe(
@@ -236,15 +202,7 @@ class FunCog(BaseCog):
                 args.append(arg_dict.get(name))
         log_args = ", ".join(f"{name}: {value}" for name, value in zip(arg_names, args, strict=False) if value is not None)
         await self.bot.log_to_file(f"{ctx.author}, {log_args}, model: {model}", "log.txt")
-        is_safe, reason = await self.moderate_text(prompt)
-        if not is_safe:
-            if not reason:
-                await ctx.send("Prompt moderation failed, please report to bot owner.")
-                return
-            await self.bot.log_to_file(f"Moderated prompt from {ctx.author}: {reason}", "log.txt")
-            await ctx.send(f"Your prompt was moderated. Reason: {reason}")
-            # if moderated - perma-ban or something?
-            return
+        # prompt moderation was removed because AI is stupid.
         supported_models = {
             "schnell": "black-forest-labs/FLUX.1-schnell",
             "merged": "multimodalart/FLUX.1-merged",
@@ -257,16 +215,19 @@ class FunCog(BaseCog):
             return
         start_time = time.perf_counter()
         try:
-            async with self.img_client as client:
-                result = await client.predict(src=chosen_model, **arg_dict)
+            result = await self.img_client.predict(src=chosen_model, **arg_dict)
             json_data, seed = result
             async with self.bot.session.get(json_data["url"]) as img_resp:
                 # maybe I should make unique file names in the future...
                 img_file = discord.File(io.BytesIO(await img_resp.read()), "image.webp")
             gen_time = time.perf_counter() - start_time
             await ctx.send(f"Generated image in {gen_time:.2f} seconds, seed: {seed}", file=img_file)
+        except (ValueError, TypeError) as e:
+            # not critical, probably invalid parameters
+            await ctx.send(f"Sorry, there was an issue generating the image. {e}")
         except Exception as e:
             self.logger.exception(f"Error in image command during predict: {e}")
+            self.logger.exception(f"Error during predict: {e}")
             await ctx.send(f"Sorry, there was an issue generating the image. {e}")
 
     def _trim(self, text: str, max_len: int = 500) -> str:
