@@ -138,8 +138,29 @@ class Bot(commands.Bot):
         async def bot_info(_):
             return web.Response(text=f"Bot is running as {self.user}, {count_values()}")
 
+        async def rate_limit_info(_):
+            """Check Discord API rate limit headers"""
+            try:
+                # Make a request to Discord to get rate limit info
+                url = "https://discord.com/api/v10/users/@me"
+                async with self.session.get(url, headers={"authorization": f"Bot {TOKEN}"}) as response:
+                    rate_limit_headers = {
+                        "Limit": response.headers.get("X-RateLimit-Limit", "N/A"),
+                        "Remaining": response.headers.get("X-RateLimit-Remaining", "N/A"),
+                        "Reset": response.headers.get("X-RateLimit-Reset", "N/A"),
+                        "Reset-After": response.headers.get("X-RateLimit-Reset-After", "N/A"),
+                        "Bucket": response.headers.get("X-RateLimit-Bucket", "N/A"),
+                    }
+                    text = "Discord Rate Limit Headers:\n"
+                    for key, value in rate_limit_headers.items():
+                        text += f"{key}: {value}\n"
+                    return web.Response(text=text)
+            except Exception as e:
+                return web.Response(text=f"Error checking rate limits: {e}", status=500)
+
         app.router.add_get("/", web_status)
         app.router.add_get("/info", bot_info)
+        app.router.add_get("/ratelimit", rate_limit_info)
         runner = web.AppRunner(app)
         await runner.setup()
         host, port = "0.0.0.0", os.getenv("SERVER_PORT") or os.getenv("PORT") or 8000

@@ -63,7 +63,9 @@ class EconomyCog(BaseCog):
     @commands.hybrid_command(name="give", help="Give currency to another user")
     @commands.cooldown(1, 10, commands.BucketType.user)
     async def give(self, ctx: Ctx, user: discord.Member, amount: float):
-        if amount < 1:
+        if amount < 0:
+            return await ctx.send("Amount must be positive.")
+        if amount < 1 and not self.bot.is_owner(ctx.author):
             return await ctx.send("Amount must be at least 1.")
         author = ctx.author
         # you can't give yourself, lol
