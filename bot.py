@@ -226,13 +226,13 @@ class Bot(commands.Bot):
     async def close(self):
         await super().close()
         # insanely genius way to close stuff
-        coros = []
+        coros: list[asyncio._CoroutineLike] = []
         for closer in self._closers:
             try:
                 coros.append(closer() if callable(closer) else closer)
             except Exception as e:
                 self.logger.error(f"Error creating close coro for {closer}: {e}")
-        results = await asyncio.gather(*coros, return_exceptions=True) if coros else []
+        results = await self.agather(*coros) if coros else []
         for result in results:
             if isinstance(result, Exception):
                 self.logger.error(f"Error during closing: {result}")
@@ -242,6 +242,10 @@ class Bot(commands.Bot):
     async def path_exists(self, path: str):
         """Check if path exists, async version."""
         return await anyio.Path(path).exists()
+
+    async def agather(self, *coros: asyncio._CoroutineLike, return_exceptions=True):
+        """asyncio.gather for usage in cogs and anywhere with bot import."""
+        return await asyncio.gather(*coros, return_exceptions=return_exceptions)
 
     async def download_file(self, file: str, not_found_ok=False):
         """Download file content from pCloud and return as text.

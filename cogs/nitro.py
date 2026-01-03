@@ -1,4 +1,3 @@
-import asyncio
 import datetime
 import re
 
@@ -35,9 +34,15 @@ class NitroCog(BaseCog):
         # load variables in async
         self.embed_var = [doc async for doc in self.embed_settings.find()]
         counter_ids = ["nitro_counter", "nitro_limit", "b1mult", "b2mult", "new_nitro_system", "nitro_toggle"]
-        results = await asyncio.gather(*[self.bot.counter.find_one({"_id": _id}) for _id in counter_ids])
+        results = await self.bot.agather(*[self.bot.counter.find_one({"_id": _id}) for _id in counter_ids])
         # Map results to instance variables
         for _id, doc in zip(counter_ids, results, strict=False):
+            if isinstance(doc, Exception):
+                self.logger.warning(f"Erro finding counter {_id}: {doc}")
+                continue
+            if not isinstance(doc, dict):
+                self.logger.warning(f"Counter {_id} is missing or invalid, not a dict.")
+                continue
             value = doc.get("count", 0) if doc else 0
             if _id in ["new_nitro_system", "nitro_toggle"]:
                 value = doc.get("state", True) if doc else True
