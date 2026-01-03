@@ -65,52 +65,49 @@ class EconomyCog(BaseCog):
     async def give(self, ctx: Ctx, user: discord.Member, amount: float):
         if amount < 0:
             return await ctx.send("Amount must be positive.")
-        if amount < 1 and not self.bot.is_owner(ctx.author):
+        if amount < 1 and not await self.bot.is_owner(ctx.author):
             return await ctx.send("Amount must be at least 1.")
         author = ctx.author
+        user_id = user.id
         # you can't give yourself, lol
-        if author.id == user.id:
+        if author.id == user_id:
             return await ctx.send("You can't give yourself currency.")
         author_data = await self.eco.find_one({"_id": author.id})
         if not author_data:
             return await ctx.send(f"You don't have any {self.bot.currency}.")
         if author_data["balance"] < amount:
             return await ctx.send(f"You don't have enough {self.bot.currency} to give.")
-        user_id = user.id
-        user_data = await self.eco.find_one({"_id": user_id})
-        if user_data:
-            new_bal = user_data["balance"] + amount
-            await self.eco.update_one({"_id": user_id}, {"$set": {"balance": new_bal}})
-        else:
-            new_bal = amount
-            await self.eco.insert_one({"_id": user_id, "balance": new_bal})
-        await self.eco.update_one({"_id": author.id}, {"$inc": {"balance": -amount}})
+        # Perform both updates in parallel, convert float to Decimal128
+        fix_float = self.bot.to_d128
+        update_recipient = self.eco.update_one({"_id": user_id}, {"$inc": {"balance": fix_float(amount)}}, upsert=True)
+        update_sender = self.eco.update_one({"_id": author.id}, {"$inc": {"balance": fix_float(-amount)}}, upsert=True)
+        await self.bot.agather(update_recipient, update_sender)
+        recipient_data = await self.eco.find_one({"_id": user_id})
+        if not recipient_data:
+            self.logger.error(f"User {user_id} not found in database")
+            return await ctx.send(f"Something went wrong. User {user.name} not found in database.")
+        new_bal = recipient_data["balance"]
         amount_cur = f"{amount:g} {self.bot.currency}"
         await ctx.send(f"**{author.name}** gave **{user.name}** {amount_cur}. Their new balance is {new_bal:g}.")
 
     @commands.hybrid_command(name="set_balance", help="Sets the user's balance to a specific amount")
-    @commands.has_permissions(administrator=True)
+    @commands.is_owner()
     async def set_balance(self, ctx, user: discord.User, amount: float):
-        user_id = user.id
-        await self.eco.update_one({"_id": user_id}, {"$set": {"balance": amount}}, upsert=True)
+        await self.eco.update_one({"_id": user.id}, {"$set": {"balance": amount}}, upsert=True)
         await self.bot.respond(ctx, f"{user.name}'s balance has been set to {amount}.")
 
     @commands.hybrid_command(name="remove_user", help="Removes a user from the economy database")
-    @commands.has_permissions(administrator=True)
+    @commands.is_owner()
     async def remove_user(self, ctx, user: discord.User):
-        user_id = user.id
-        await self.eco.delete_one({"_id": user_id})
+        await self.eco.delete_one({"_id": user.id})
         await self.bot.respond(ctx, f"{user.name}'s data has been removed from the database.")
 
     @commands.hybrid_command(name="balance", help="Displays your current balance")
     async def balance(self, ctx: Ctx):
-        user_id = ctx.author.id
-        user = await self.eco.find_one({"_id": user_id})
-        if user:
-            balance = user["balance"]
-        else:
+        user = await self.eco.find_one({"_id": ctx.author.id})
+        if not user:
             return await ctx.send(f"You are not in database. (no {self.bot.currency})")
-        await ctx.send(f"{ctx.author.mention}, your current balance is {balance:g}.")
+        await ctx.send(f"{ctx.author.mention}, your current balance is {user["balance"]:g}.")
 
     @commands.hybrid_command(name="leaderboard", help="Displays the leaderboard of top users")
     @commands.cooldown(1, 30, commands.BucketType.user)

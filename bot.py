@@ -10,6 +10,7 @@ import anyio
 import discord
 from aiohttp import web
 from async_pcloud import AsyncPyCloud
+from bson.decimal128 import Decimal128
 from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -371,6 +372,15 @@ class Bot(commands.Bot):
     def now_utc(self):
         """Get the current time in UTC."""
         return datetime.datetime.now(datetime.timezone.utc)
+
+    def to_d128(self, value):
+        """Safely converts any numeric type to Decimal128 via string."""
+        if value is None:
+            return Decimal128("0.0")
+        # Rounding to 10 decimal places strips the "0.00000000000004" noise
+        # while keeping the intended decimal value.
+        cleaned_str = str(round(float(value), 10))
+        return Decimal128(cleaned_str)
 
 
 class BaseCog(commands.Cog):
