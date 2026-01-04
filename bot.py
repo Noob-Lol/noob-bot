@@ -3,6 +3,8 @@ import datetime
 import inspect
 import logging
 import os
+from collections.abc import Awaitable
+from typing import Any
 
 import aiofiles
 import aiohttp
@@ -228,7 +230,7 @@ class Bot(commands.Bot):
     async def close(self):
         await super().close()
         # insanely genius way to close stuff
-        coros: list[asyncio._CoroutineLike] = []
+        coros: list[Awaitable[Any]] = []
         for closer in self._closers:
             try:
                 coros.append(closer() if callable(closer) else closer)
@@ -245,7 +247,7 @@ class Bot(commands.Bot):
         """Check if path exists, async version."""
         return await anyio.Path(path).exists()
 
-    async def agather(self, *coros: asyncio._CoroutineLike, return_exceptions=True):
+    async def agather(self, *coros: Awaitable[Any], return_exceptions=True):
         """asyncio.gather for usage in cogs and anywhere with bot import."""
         return await asyncio.gather(*coros, return_exceptions=return_exceptions)
 
