@@ -100,14 +100,15 @@ class Bot(commands.Bot):
             if item["thing"] not in disabled_items:
                 disabled_items[item["thing"]] = set()
             disabled_items[item["thing"]].add(item["item_id"])
-        cogs = [filename[:-3] for filename in os.listdir(f"{script_path}/cogs") if filename.endswith(".py")]
-        for cog_name in cogs:
-            if cog_name in disabled_items.get("cog", []):
-                continue
-            try:
-                await self.load_extension(f"cogs.{cog_name}")
-            except commands.ExtensionAlreadyLoaded:
-                pass
+        if await self.path_exists(f"{script_path}/cogs"):
+            cogs = [filename[:-3] for filename in os.listdir(f"{script_path}/cogs") if filename.endswith(".py")]
+            for cog_name in cogs:
+                if cog_name in disabled_items.get("cog", []):
+                    continue
+                try:
+                    await self.load_extension(f"cogs.{cog_name}")
+                except commands.ExtensionAlreadyLoaded:
+                    pass
         disabled_commands = [self.get_command(cmd) for cmd in disabled_items.get("command", []) if self.get_command(cmd)]
         for command in disabled_commands:
             if command:
