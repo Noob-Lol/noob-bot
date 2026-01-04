@@ -159,8 +159,9 @@ class Bot(commands.Bot):
                     for key, value in rate_limit_headers.items():
                         text += f"{key}: {value}\n"
                     return web.Response(text=text)
-            except Exception as e:
-                return web.Response(text=f"Error checking rate limits: {e}", status=500)
+            except Exception:
+                self.logger.exception("Error checking rate limits")
+                return web.Response(text="Error checking rate limits", status=500)
 
         app.router.add_get("/", web_status)
         app.router.add_get("/info", bot_info)
