@@ -38,7 +38,7 @@ class NitroCog(BaseCog):
         # Map results to instance variables
         for _id, doc in zip(counter_ids, results, strict=False):
             if isinstance(doc, Exception):
-                self.logger.warning(f"Erro finding counter {_id}: {doc}")
+                self.logger.warning(f"Error finding counter {_id}: {doc}")
                 continue
             if not isinstance(doc, dict):
                 self.logger.warning(f"Counter {_id} is missing or invalid, not a dict.")

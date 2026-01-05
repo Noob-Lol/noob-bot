@@ -3,6 +3,5 @@ python-dotenv
 pymongo
 noob-gradio
 openai
-aiofiles
 pytz
 async_pcloud

@@ -1,16 +1,15 @@
-import asyncio
 import datetime
 import inspect
 import logging
 import os
 from collections.abc import Awaitable
-from typing import Any
+from typing import TypeVar
 
-import aiofiles
 import aiohttp
 import anyio
 import discord
 from aiohttp import web
+from anyio import Path
 from async_pcloud import AsyncPyCloud
 from bson.decimal128 import Decimal128
 from discord import app_commands
@@ -27,17 +26,19 @@ if os.name == "nt" and not os.getenv("WT_SESSION"):
         os.environ["WT_SESSION"] = "bruh"
     except ImportError:
         pass
+T = TypeVar("T")
 bot_name = "noob_bot"
 logging.getLogger("discord").setLevel(logging.INFO)
 my_loggers = [bot_name, "bot"]
 for logger in my_loggers:
     logging.getLogger(logger).setLevel(logging.INFO)
 load_dotenv()
-script_path = os.path.dirname(__file__)
+script_path = Path(__file__).parent
 TOKEN = os.environ["TOKEN"]
 RTOKEN = os.getenv("RTOKEN")
 PTOKEN = os.getenv("PTOKEN")
 LOCAL_STORAGE = True if os.getenv("LOCAL_STORAGE") == "True" else False
+DC_API_BASE = "https://discord.com/api/v10"
 folder = "DiscordBotData"
 pcloud = AsyncPyCloud(PTOKEN, folder=folder)
 uri = os.environ["MONGODB_URI"]
@@ -72,7 +73,7 @@ class Bot(commands.Bot):
         self.db = db
         self.counter = db["counter"]
         self.react = False
-        self.file_lock = asyncio.Lock()
+        self.file_lock = anyio.Lock()
         self.currency = "noob credits"
 
     @property
@@ -146,7 +147,7 @@ class Bot(commands.Bot):
             """Check Discord API rate limit headers"""
             try:
                 # Make a request to Discord to get rate limit info
-                url = "https://discord.com/api/v10/users/@me"
+                url = f"{DC_API_BASE}/users/@me"
                 async with self.session.get(url, headers={"authorization": f"Bot {TOKEN}"}) as response:
                     rate_limit_headers = {
                         "Limit": response.headers.get("X-RateLimit-Limit", "N/A"),
@@ -231,7 +232,7 @@ class Bot(commands.Bot):
     async def close(self):
         await super().close()
         # insanely genius way to close stuff
-        coros: list[Awaitable[Any]] = []
+        coros: list[Awaitable[None]] = []
         for closer in self._closers:
             try:
                 coros.append(closer() if callable(closer) else closer)
@@ -244,24 +245,39 @@ class Bot(commands.Bot):
         self.logger.info("Bye!")
 
     # custom functions
-    async def path_exists(self, path: str):
+    async def path_exists(self, path: str | os.PathLike[str]):
         """Check if path exists, async version."""
-        return await anyio.Path(path).exists()
+        return await Path(path).exists()
 
-    async def agather(self, *coros: Awaitable[Any], return_exceptions=True):
-        """asyncio.gather for usage in cogs and anywhere with bot import."""
-        return await asyncio.gather(*coros, return_exceptions=return_exceptions)
+    async def agather(self, *coros: Awaitable[T], return_exceptions=True):
+        """asyncio.gather alternative using anyio with error handling and typing."""
+        results: list[T | Exception | None] = [None] * len(coros)
+        errors: list[Exception] = []
+        async with anyio.create_task_group() as tg:
+            for i, coro in enumerate(coros):
+                async def runner(i=i, coro=coro):
+                    try:
+                        results[i] = await coro
+                    except Exception as e:
+                        if return_exceptions:
+                            results[i] = e
+                        else:
+                            errors.append(e)
+                tg.start_soon(runner)
+        if errors and not return_exceptions:
+            raise errors[0]
+        return results
 
-    async def download_file(self, file: str, not_found_ok=False):
+    async def download_file(self, file: str, not_found_ok=False) -> str:
         """Download file content from pCloud and return as text.
         not_found_ok=True will not raise an exception if the file is not found."""
         if LOCAL_STORAGE:
-            if not await self.path_exists(f"{script_path}/{file}"):
+            file_path = script_path / file
+            if not await self.path_exists(file_path):
                 if not_found_ok:
                     return ""
                 raise Exception("Not found in local storage.")
-            async with aiofiles.open(f"{script_path}/{file}") as f:
-                return await f.read()
+            return await file_path.read_text("utf-8")
         file_text = await pcloud.gettextfile(not_found_ok, path=file)
         if file_text is None:
             if not_found_ok:
@@ -269,11 +285,10 @@ class Bot(commands.Bot):
             raise Exception(f"Not found in folder '{folder}'.")
         return file_text
 
-    async def upload_file(self, filename: str, content: str):
+    async def upload_file(self, filename: str, content: str) -> None:
         """Upload content to a file in pCloud. Or write to file."""
         if LOCAL_STORAGE:
-            async with aiofiles.open(f"{script_path}/{filename}", "w") as f:
-                await f.write(content)
+            await (script_path / filename).write_text(content, "utf-8")
             return
         resp = await pcloud.upload_one_file(filename, content, path="/")
         if resp.get("error"):
@@ -322,7 +337,7 @@ class Bot(commands.Bot):
                 return 0
             if not RTOKEN:
                 raise Exception("RTOKEN not found.")
-            url = f"https://discord.com/api/v10/guilds/{guild.id}/premium/subscriptions/a"
+            url = f"{DC_API_BASE}/guilds/{guild.id}/premium/subscriptions"
             async with await self.session.get(url, headers={"authorization": RTOKEN}) as response:
                 resp_json = await response.json()
             if isinstance(resp_json, list):
