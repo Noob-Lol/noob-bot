@@ -103,8 +103,9 @@ class Bot(commands.Bot):
             if item["thing"] not in disabled_items:
                 disabled_items[item["thing"]] = set()
             disabled_items[item["thing"]].add(item["item_id"])
-        if await self.path_exists(f"{script_path}/cogs"):
-            cogs = [filename[:-3] for filename in os.listdir(f"{script_path}/cogs") if filename.endswith(".py")]
+        cogs_path = script_path / "cogs"
+        if await cogs_path.is_dir():
+            cogs = [filename[:-3] for filename in os.listdir(cogs_path) if filename.endswith(".py")]
             for cog_name in cogs:
                 if cog_name in disabled_items.get("cog", []):
                     continue
@@ -245,10 +246,6 @@ class Bot(commands.Bot):
         self.logger.info("Bye!")
 
     # custom functions
-    async def path_exists(self, path: str | os.PathLike[str]):
-        """Check if path exists, async version."""
-        return await Path(path).exists()
-
     async def agather(self, *coros: Awaitable[T], return_exceptions=True):
         """asyncio.gather alternative using anyio with error handling and typing."""
         results: list[T | Exception | None] = [None] * len(coros)
@@ -273,7 +270,7 @@ class Bot(commands.Bot):
         not_found_ok=True will not raise an exception if the file is not found."""
         if LOCAL_STORAGE:
             file_path = script_path / file
-            if not await self.path_exists(file_path):
+            if not await file_path.exists():
                 if not_found_ok:
                     return ""
                 raise Exception("Not found in local storage.")
@@ -406,6 +403,7 @@ class BaseCog(commands.Cog):
     """Base class for cogs with extra stuff"""
     def __init__(self, bot: Bot):
         self.bot = bot
+        self.bot_path = bot.script_path
         self._ready = False
 
     async def cog_on_ready(self):

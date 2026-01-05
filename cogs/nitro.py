@@ -180,7 +180,7 @@ class NitroCog(BaseCog):
             return await self.bot.respond(ctx, "Nitro commands are disabled.")
         if not self.active_promo:
             return await self.bot.respond(ctx, no_active_promo_str)
-        if await self.bot.path_exists(f"{self.bot.script_path}/lock.txt"):
+        if await (self.bot_path / "lock.txt").exists():
             return await self.bot.respond(ctx, "The bot is in maintenance, please retry later.")
         place = place.lower()
         if place != "dm" and place != "channel":
