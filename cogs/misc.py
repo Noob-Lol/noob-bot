@@ -21,11 +21,12 @@ class MiscCog(BaseCog):
 
     @commands.hybrid_command(name="dmme", help="Sends a DM to the author")
     async def dmme(self, ctx: Ctx, *, text: str):
+        await self.do_nothing()
         try:
             await ctx.author.send(text)
-            await self.bot.respond(ctx, "DM was sent", del_cmd=False)
+            await ctx.respond("DM was sent", del_cmd=False)
         except Exception as e:
-            await self.bot.respond(ctx, f"Could not send DM, {e}", del_cmd=False)
+            await ctx.respond(f"Could not send DM, {e}", del_cmd=False)
 
     @commands.hybrid_command(name="cb", help="Check boost count of a user")
     @commands.cooldown(1, 3, commands.BucketType.user)
@@ -34,8 +35,9 @@ class MiscCog(BaseCog):
         guild, user = self.bot.verify_guild_user(ctx.guild, ctx.author if user is None else user)
         boosts = await self.bot.check_boost(guild, user)
         if boosts == -1:
-            return await ctx.send("Failed to get boost count.")
-        elif boosts == 0:
+            await ctx.send("Failed to get boost count.")
+            return
+        if boosts == 0:
             await ctx.send(f"{user.name} has not boosted the server.")
         else:
             await ctx.send(f"{user.name} has {boosts} boosts.")
@@ -80,7 +82,7 @@ class MiscCog(BaseCog):
                 description=f"{ctx.author} (<@{ctx.author.id}>) has submitted a new feedback:\n```\n{text}\n```",
                 color=0xBEBEFE),
         )
-        await self.bot.respond(ctx, "Feedback submitted")
+        await ctx.respond("Feedback submitted")
 
     @commands.hybrid_command(name="weather", help="Sends the weather for a city")
     @app_commands.describe(city="City name")
@@ -113,18 +115,19 @@ class MiscCog(BaseCog):
                 embed.add_field(name=forecast["date"], value=f"{temp}, {rain}", inline=False)
             await ctx.send(embed=embed)
         except Exception as e:
-            self.logger.error(f"Failed to get data: {e}")
+            self.logger.exception("Failed to get data:")
             await ctx.send(f"Failed to get weather data: {e}")
 
     @commands.hybrid_command(name="log", help="Logs a message to the log file")
     @commands.is_owner()
     async def log_text(self, ctx: Ctx, *, text: str):
         await self.bot.log_to_file(text, "test_log.txt")
-        await self.bot.respond(ctx, "Message logged")
+        await ctx.respond("Message logged")
 
     @commands.hybrid_command(name="crash", help="Crashes the bot (for testing)")
     @commands.is_owner()
     async def crash_bot(self, ctx: Ctx, error_message: str = "crash"):
+        self.logger.info("Crashing bot...")
         raise discord.DiscordException(error_message)
 
 

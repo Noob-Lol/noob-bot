@@ -37,8 +37,8 @@ class FunCog(BaseCog):
         if base_url and api_key:
             try:
                 self.client = openai.AsyncOpenAI(base_url=base_url, api_key=api_key)
-            except Exception as e:
-                self.logger.exception(f"Failed to init chat client: {e}")
+            except Exception:
+                self.logger.exception("Failed to init chat client:")
         else:
             self.logger.warning("CHAT_API_BASE_URL or CHAT_API_KEY not set; chat is disabled")
         self.img_client = Client(hf_token=hf_token, download_files=False, session=bot.session)
@@ -51,17 +51,19 @@ class FunCog(BaseCog):
 
     @commands.hybrid_command(name="flip", help="Flips a coin")
     async def flip(self, ctx: Ctx):
+        await self.do_nothing()
         choices = ["Heads", "Tails"]
         await ctx.send(f"**{ctx.author.name}** flipped a coin and it landed on **{random.choice(choices)}**")
 
     @commands.hybrid_command(name="random", help="Sends a random number")
-    async def random(self, ctx: Ctx, min: int, max: int):
-        if min == max:
+    async def random(self, ctx: Ctx, min_: int, max_: int):
+        await self.do_nothing()
+        if min_ == max_:
             await ctx.send("Numbers are equal", delete_after=3)
         else:
-            if min > max:
-                min, max = max, min
-            await ctx.send(f"**{ctx.author.name}** rolled a **{random.randint(min, max)}**")
+            if min_ > max_:
+                min_, max_ = max_, min_
+            await ctx.send(f"**{ctx.author.name}** rolled a **{random.randint(min_, max_)}**")
 
     @commands.hybrid_command(name="joke", help="Sends a random joke")
     async def joke(self, ctx: Ctx):
@@ -115,7 +117,7 @@ class FunCog(BaseCog):
                 history_messages.reverse()  # chronological
                 # print(history_messages)
             except Exception as e:
-                self.logger.warning(f"Failed to fetch message history for context: {e}")
+                self.logger.warning("Failed to fetch message history for context: %s", e)
 
             messages = [
                 {"role": "system", "content": sys_prompt},
@@ -135,13 +137,13 @@ class FunCog(BaseCog):
             gen_time = time.perf_counter() - start
             ai_footer = f"\n-# This is AI-generated. Time: {gen_time:.2f}s"
             msg += ai_footer
-            return msg
         except openai.RateLimitError:
             self.logger.warning("Api rate limit exceeded")
             return "Api rate limit exceeded, please try again later"
-        except Exception as e:
-            self.logger.exception(f"Error in ai_chat command while creating completion: {e}")
+        except Exception:
+            self.logger.exception("Error in ai_chat command while creating completion:")
             return "Something went wrong, please try again later"
+        return msg
 
     @commands.hybrid_command(name="chat", help="Chat with ai")
     @commands.cooldown(1, 30, commands.BucketType.user)
@@ -158,8 +160,8 @@ class FunCog(BaseCog):
                 chunks = split_response(msg)
                 for chunk in chunks:
                     await ctx.reply(chunk)
-        except Exception as e:
-            self.logger.exception(f"Error in ai_chat command: {e}")
+        except Exception:
+            self.logger.exception("Error in ai_chat command:")
 
     @commands.hybrid_command(name="image", help="Generates an image")
     @commands.cooldown(1, 30, commands.BucketType.user)
@@ -173,8 +175,9 @@ class FunCog(BaseCog):
             app_commands.Choice(name="merged", value="merged"),
             app_commands.Choice(name="dev", value="dev"),
             app_commands.Choice(name="krea-dev", value="krea-dev"),
+            app_commands.Choice(name="dev2", value="dev2"),
         ])
-    async def image(self, ctx: Ctx, *, prompt: str, seed: int = 0, width: int = 1024, height: int = 1024,
+    async def image(self, ctx: Ctx, *, prompt: str, seed: int = 0, width: int = 1024, height: int = 1024,  # noqa: PLR0913
                     guidance_scale: float = 3.5, steps: int = 4, model: str = "schnell") -> None:
         await ctx.defer()
         arg_dict: dict = {"prompt": prompt, "api_name": "/infer"}
@@ -208,6 +211,7 @@ class FunCog(BaseCog):
             "merged": "multimodalart/FLUX.1-merged",
             "dev": "black-forest-labs/FLUX.1-dev",
             "krea-dev": "black-forest-labs/FLUX.1-Krea-dev",
+            "dev2": "black-forest-labs/FLUX.2-dev",
         }
         chosen_model = supported_models.get(model)
         if not chosen_model:
@@ -226,10 +230,11 @@ class FunCog(BaseCog):
             # not critical, probably invalid parameters
             await ctx.send(f"Sorry, there was an issue generating the image. {e}")
         except Exception as e:
-            self.logger.exception(f"Error during predict: {e}")
+            self.logger.exception("Error during predict:")
             await ctx.send(f"Sorry, there was an issue generating the image. {e}")
 
-    def _trim(self, text: str, max_len: int = 500) -> str:
+    @staticmethod
+    def _trim(text: str, max_len: int = 500) -> str:
         if not text:
             return ""
         if "\n-# This is AI-generated." in text:
