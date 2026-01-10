@@ -127,7 +127,7 @@ class EconomyCog(BaseCog):
 
         member_ids = [m.id for m in guild.members]
         cursor = self.eco.find({"_id": {"$in": member_ids}}).sort("balance", -1)
-        users = await cursor.to_list(length=100)
+        users = await cursor.to_list(100)
 
         leaderboard_data = []
         for user in users:

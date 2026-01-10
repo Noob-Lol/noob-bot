@@ -73,7 +73,7 @@ class NitroCog(BaseCog):
 
     async def cog_load(self):
         # load variables in async
-        self.embed_var = [doc async for doc in self.embed_settings.find()]
+        self.embed_var = await self.embed_settings.find().to_list()
         counter_ids = ["nitro_counter", "nitro_limit", "b1mult", "b2mult", "new_nitro_system", "nitro_toggle"]
         results = await self.bot.agather(*[self.bot.counter.find_one({"_id": id_}) for id_ in counter_ids])
         # Map results to instance variables
@@ -108,8 +108,12 @@ class NitroCog(BaseCog):
         now = self.bot.now_utc()
         await self.promo_exclusions.delete_many({"auto_hide_until": {"$lt": now}})
         # Get current exclusions (both manual and auto-hide that haven't expired)
-        excluded_promos = self.promo_exclusions.find({"$or": [{"manually_hidden": True}, {"auto_hide_until": {"$gte": now}}]})
-        exclusions = [doc["promo_name"] async for doc in excluded_promos]
+        exclusions = [
+            doc["promo_name"]
+            for doc in await self.promo_exclusions.find({
+                "$or": [{"manually_hidden": True}, {"auto_hide_until": {"$gte": now}}],
+            }).to_list()
+        ]
         valid_promos = []
         for article in data["articles"]:
             if article["section_id"] != psection_id:
@@ -481,8 +485,7 @@ class NitroCog(BaseCog):
                 if current.lower() in name.lower():
                     choices.append(app_commands.Choice(name=name[:100], value=name))
         # Get hidden promos
-        hidden_promos = self.promo_exclusions.find({})
-        async for doc in hidden_promos:
+        for doc in await self.promo_exclusions.find({}).to_list():
             promo_name = doc["promo_name"]
             if current.lower() in promo_name.lower():
                 choice_name = f"{promo_name} (hidden)"[:100]
@@ -536,8 +539,7 @@ class NitroCog(BaseCog):
     @commands.is_owner()
     async def hiddenpromos(self, ctx: Ctx):
         """Lists all hidden promos."""
-        hidden_list = self.promo_exclusions.find({})
-        names = [doc["promo_name"] async for doc in hidden_list]
+        names = [doc["promo_name"] for doc in await self.promo_exclusions.find({}).to_list()]
         if not names:
             await ctx.send("There are no hidden promos.")
         else:

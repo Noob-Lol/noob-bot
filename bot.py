@@ -184,7 +184,7 @@ class Bot(commands.Bot):
         pcloud.set_session(self.session)
         global disabled_items
         guild_id = int(os.environ["GUILD_ID"]) if os.getenv("GUILD_ID") else None
-        async for item in db["disabled_items"].find():
+        for item in await db["disabled_items"].find().to_list():
             if item["thing"] not in disabled_items:
                 disabled_items[item["thing"]] = set()
             disabled_items[item["thing"]].add(item["item_id"])
