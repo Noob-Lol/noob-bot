@@ -1,10 +1,10 @@
 import datetime
 import re
+from zoneinfo import ZoneInfo
 
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
-from pytz import timezone
 
 from bot import BaseCog, Bot, Ctx
 
@@ -35,8 +35,8 @@ def parse_date(text: str) -> datetime.datetime:
     time_part_up = time_part.upper()
     # choose appropriate strptime format depending on whether minutes are present
     fmt = "%B %d, %Y %I:%M%p" if ":" in time_part_up else "%B %d, %Y %I%p"
-    dt_obj = datetime.datetime.strptime(f"{date_part} {time_part_up}", fmt)
-    return timezone(tz).localize(dt_obj).astimezone(datetime.UTC)
+    dt_obj = datetime.datetime.strptime(f"{date_part} {time_part_up}", fmt).replace(tzinfo=ZoneInfo(tz))
+    return dt_obj.astimezone(datetime.UTC)
 
 
 def fix_date(strongs: list[str]) -> list[str]:
