@@ -96,8 +96,8 @@ class Decimal129(Decimal128):
     def __format__(self, fmt): return self._dec().__format__(fmt)
     # Some ops
     def __neg__(self): return Decimal129(-self._dec())
-    def __abs__(self): return Decimal129(abs(self._dec()))
     def __pos__(self): return Decimal129(+self._dec())
+    def __abs__(self): return Decimal129(abs(self._dec()))
     def __round__(self, *, ndigits=None): return Decimal129(round(self._dec(), ndigits))
 
 
@@ -236,7 +236,7 @@ class Bot(commands.Bot):
             try:
                 # Make a request to Discord to get rate limit info
                 url = f"{DC_API_BASE}/users/@me"
-                async with self.session.get(url, headers={"authorization": f"Bot {TOKEN}"}) as response:
+                async with self.session.get(url, headers={"authorization": f"Bot {TOKEN}"}, raise_for_status=False) as response:
                     rate_limit_headers = {
                         "Limit": response.headers.get("X-RateLimit-Limit", "N/A"),
                         "Remaining": response.headers.get("X-RateLimit-Remaining", "N/A"),
