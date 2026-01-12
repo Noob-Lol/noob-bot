@@ -30,17 +30,13 @@ class FunCog(BaseCog):
     def __init__(self, bot: Bot):
         super().__init__(bot)
         hf_token = bot.get_env("HF_TOKEN")
-        base_url = bot.get_env("CHAT_API_BASE_URL")
-        api_key = bot.get_env("CHAT_API_KEY")
         self.chat_model = bot.get_env("CHAT_MODEL")
         self.client = None
-        if base_url and api_key:
-            try:
-                self.client = openai.AsyncOpenAI(base_url=base_url, api_key=api_key)
-            except Exception:
-                self.logger.exception("Failed to init chat client:")
-        else:
-            self.logger.warning("CHAT_API_BASE_URL or CHAT_API_KEY not set; chat is disabled")
+        try:
+            # use default env varibles for init, OPENAI_API_KEY and OPENAI_API_BASE.
+            self.client = openai.AsyncOpenAI()
+        except openai.OpenAIError:
+            self.logger.exception("Failed to init chat client:")
         self.img_client = Client(hf_token=hf_token, download_files=False, session=bot.session)
 
     @commands.hybrid_command(name="cat", help="Sends a random cat image")
@@ -133,16 +129,19 @@ class FunCog(BaseCog):
             msg = completion.choices[0].message.content
             if not msg:
                 self.logger.error("Empty response from ai_chat command")
-                return "Something went wrong, please try again later"
+                return "Something went wrong, please try again later."
             gen_time = time.perf_counter() - start
             ai_footer = f"\n-# This is AI-generated. Time: {gen_time:.2f}s"
             msg += ai_footer
+        except openai.AuthenticationError as e:
+            self.logger.warning("Api auth error, check if OPENAI_ vars are correct: %s", e)
+            return "Api authentication error, please report this to the bot owner."
         except openai.RateLimitError:
             self.logger.warning("Api rate limit exceeded")
-            return "Api rate limit exceeded, please try again later"
+            return "Api rate limit exceeded, please try again later."
         except Exception:
             self.logger.exception("Error in ai_chat command while creating completion:")
-            return "Something went wrong, please try again later"
+            return "Something went wrong, please try again later."
         return msg
 
     @commands.hybrid_command(name="chat", help="Chat with ai")
