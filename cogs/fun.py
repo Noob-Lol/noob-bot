@@ -29,14 +29,20 @@ def split_response(response: str, max_length=1900):
 class FunCog(BaseCog):
     def __init__(self, bot: Bot):
         super().__init__(bot)
-        hf_token = bot.get_env("HF_TOKEN")
-        self.chat_model = bot.get_env("CHAT_MODEL")
+        getenv = bot.get_env
+        hf_token = getenv("HF_TOKEN")
+        base_url = getenv("CHAT_API_BASE_URL") or getenv("OPENAI_BASE_URL")
+        api_key = getenv("CHAT_API_KEY") or getenv("OPENAI_API_KEY")
+        self.chat_model = getenv("CHAT_MODEL")
         self.client = None
-        try:
-            # use default env varibles for init, OPENAI_API_KEY and OPENAI_API_BASE.
-            self.client = openai.AsyncOpenAI()
-        except openai.OpenAIError:
-            self.logger.exception("Failed to init chat client:")
+        if api_key and base_url and self.chat_model:
+            try:
+                self.client = openai.AsyncOpenAI(api_key=api_key, base_url=base_url)
+            except openai.OpenAIError:
+                self.logger.exception("Failed to init chat client:")
+        else:
+            # maybe add checks to find which variables are missing
+            self.logger.warning("Chat API not configured, some environment variables are missing.")
         self.img_client = Client(hf_token=hf_token, download_files=False, session=bot.session)
 
     @commands.hybrid_command(name="cat", help="Sends a random cat image")
@@ -142,7 +148,8 @@ class FunCog(BaseCog):
         except Exception:
             self.logger.exception("Error in ai_chat command while creating completion:")
             return "Something went wrong, please try again later."
-        return msg
+        else:
+            return msg
 
     @commands.hybrid_command(name="chat", help="Chat with ai")
     @commands.cooldown(1, 30, commands.BucketType.user)
