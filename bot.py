@@ -19,14 +19,9 @@ from dotenv import load_dotenv
 from pymongo import AsyncMongoClient
 
 if os.name == "nt" and not os.getenv("WT_SESSION"):
-    try:
-        # this fixes logger colors on windows
-        from colorama import just_fix_windows_console
-
-        just_fix_windows_console()
-        os.environ["WT_SESSION"] = "bruh"
-    except ImportError:
-        pass
+    # this fixes logger colors on windows
+    os.system("")
+    os.environ["WT_SESSION"] = "bruh"
 T = TypeVar("T")
 bot_name = "noob_bot"
 logging.getLogger("discord").setLevel(logging.INFO)
