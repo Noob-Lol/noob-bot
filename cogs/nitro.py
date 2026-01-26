@@ -22,8 +22,11 @@ tz_map.update(dict.fromkeys(["ET", "EST", "EDT"], "US/Eastern"))
 
 
 def parse_date(text: str) -> datetime.datetime:
-    """Parse promo dates like 'January 1, 2024 (12:00AM PST)' or '(12AM PST)' into UTC datetime."""
-    match = re.search(r"([A-Za-z]+\s+\d{1,2},\s+\d{4})\s+\((\d{1,2}(?::\d{2})?[APMapm]{2})\s*([A-Z]{2,4})\)", text)
+    """Parse promo dates like 'January 1, 2024 (12:00AM PST)' or '(12AM PST)' into UTC datetime.
+    Also handles typos like '11:59M' -> '11:59PM'.
+    """
+    # Modified regex to allow 1-2 char AM/PM (e.g. 'M') and handle slight variations
+    match = re.search(r"([A-Za-z]+\s+\d{1,2},\s+\d{4})\s+\((\d{1,2}(?::\d{2})?[APMapm]{1,2})\s*([A-Z]{2,4})\)", text)
     if not match:
         msg = f"Unparsable datetime: {text}"
         raise ValueError(msg)
@@ -33,33 +36,48 @@ def parse_date(text: str) -> datetime.datetime:
         msg = f"Unknown timezone: {tz_abbr}"
         raise ValueError(msg)
     time_part_up = time_part.upper()
+    # Fix 'M' typo to 'PM' (assuming 11:59M -> 11:59PM)
+    if time_part_up.endswith("M") and not (time_part_up.endswith("AM") or time_part_up.endswith("PM")):
+        time_part_up = time_part_up.replace("M", "PM")
     # choose appropriate strptime format depending on whether minutes are present
     fmt = "%B %d, %Y %I:%M%p" if ":" in time_part_up else "%B %d, %Y %I%p"
     dt_obj = datetime.datetime.strptime(f"{date_part} {time_part_up}", fmt).replace(tzinfo=ZoneInfo(tz))
     return dt_obj.astimezone(datetime.UTC)
 
 
-def fix_date(strongs: list[str]) -> list[str]:
-    """This returns a fixed start/end date from 2 or 4 strongs."""
-    if not strongs:
-        return []
-    first_four = strongs[:4]
-    # print(first_four)
-    # find date parts in first 2-4 strongs and combine "January 1, 2024" and "(12:00AM PST)" or "(12AM PST)" if it's split
-    date_parts = []
-    for s in first_four:
-        if re.search(r"[A-Za-z]+\s+\d{1,2},\s+\d{4}", s) and s not in date_parts:
-            date_parts.append(s)
-        elif re.search(r"\(\d{1,2}:\d{2}[APMapm]{2}\s*[A-Z]{2,4}\)", s) or re.search(r"\(\d{1,2}[APMapm]{2}\s*[A-Z]{2,4}\)", s):
-            if date_parts:
-                date_parts[-1] += f" {s}"
-            else:
-                date_parts.append(s)
-    # print(date_parts)
-    if len(date_parts) == 2:
-        return [date_parts[0], date_parts[1]]
-    msg = f"Could not fix date from strongs: {first_four}, found parts: {date_parts}"
-    raise ValueError(msg)
+def extract_dates(strongs: list[str]) -> list[datetime.datetime]:
+    """Extracts all valid dates from a list of strong tags, handling split date/time strings."""
+    found_dates = []
+    i = 0
+    while i < len(strongs):
+        s = strongs[i].strip()
+        # Clean HTML tags if any (though findall usually handles inner text)
+        s = re.sub(r"<[^>]+>", "", s)
+        # 1. Try to parse as full date
+        try:
+            d = parse_date(s)
+            found_dates.append(d)
+            i += 1
+            continue
+        except ValueError:
+            pass
+        # 2. Check for split match (Date part + Time part)
+        # Regex for Date part: Month D, YYYY
+        if re.search(r"[A-Za-z]+\s+\d{1,2},\s+\d{4}", s) and i + 1 < len(strongs):
+            next_s = strongs[i + 1].strip()
+            next_s = re.sub(r"<[^>]+>", "", next_s)
+            # Regex for Time part: (12AM PST)
+            if re.search(r"\(\d{1,2}(?::\d{2})?[APMapm]{1,2}\s*[A-Z]{2,4}\)", next_s):
+                combined = f"{s} {next_s}"
+                try:
+                    d = parse_date(combined)
+                    found_dates.append(d)
+                    i += 2  # Skip next
+                    continue
+                except ValueError:
+                    pass
+        i += 1
+    return sorted(set(found_dates))
 
 
 class NitroCog(BaseCog):
@@ -101,7 +119,6 @@ class NitroCog(BaseCog):
     async def get_active_promo(self):
         """Fetch promotions via JSON API. Returns a list of active Nitro promos, or False."""
         base = "https://support.discord.com/api/v2/help_center/en-us/articles.json"
-        psection_id = 22113084771863  # Promotions section
         async with self.bot.session.get(f"{base}?per_page=100") as resp:
             data = await resp.json()
         # Clean up expired auto-hide entries
@@ -116,7 +133,7 @@ class NitroCog(BaseCog):
         ]
         valid_promos = []
         for article in data["articles"]:
-            if article["section_id"] != psection_id:
+            if article["section_id"] != 22113084771863:  # Promotions section
                 continue
             name = article["title"]
             if any(ex in name.lower() for ex in exclusions):
@@ -127,14 +144,34 @@ class NitroCog(BaseCog):
             strongs = re.findall(r"<strong>(.*?)</strong>", body_html, flags=re.DOTALL)
             if len(strongs) < 2:
                 continue
-            try:
-                start, end = map(parse_date, fix_date(strongs))
-            except ValueError:
-                self.logger.exception("date_parse error for: %s:", name)
+            dates = extract_dates(strongs)
+            if len(dates) < 2:
+                self.logger.warning("Not enough dates found for: %s", name)
                 continue
-            if start <= now <= end:
-                time_left = str(end - now).split(".")[0]
-                valid_promos.append({"name": name, "url": article["html_url"], "time_left": time_left})
+            start = dates[0]
+            redeem_end = dates[-1]
+            # Heuristic: If we found > 2 dates, the middle one is likely the claim end.
+            # If only 2, claim end is same as redeem end (or unknown).
+            claim_end = dates[1] if len(dates) > 2 else redeem_end
+            if start <= now <= redeem_end:
+                status = "Active"
+                end_ref = claim_end
+                if now > claim_end:
+                    status = "Redeem Only"
+                    end_ref = redeem_end
+                time_left = str(end_ref - now).split(".")[0]
+                # Format time_left nicer if it's negative (though now <= end_ref usually)
+                # If now > claim_end, we are in Redeem Only, so end_ref is redeem_end.
+                # Since now <= redeem_end, time_left should be positive.
+                valid_promos.append({
+                    "name": name,
+                    "url": article["html_url"],
+                    "time_left": f"{time_left} ({status})",
+                    "status": status,
+                    "claim_end": claim_end,
+                    "redeem_end": redeem_end,
+                    "expiry_dt": end_ref,
+                })
         return valid_promos or False
 
     async def old_nitro_check(self, ctx: Ctx, amount: int, guild: discord.Guild, user: discord.Member):
@@ -516,15 +553,7 @@ class NitroCog(BaseCog):
             for promo in self.active_promo:
                 if promo["name"].lower() != promo_name_lower:
                     continue
-                try:
-                    # Parse the time_left and calculate end time
-                    time_left_parts = promo["time_left"].split(":")
-                    if len(time_left_parts) == 3:
-                        hours, minutes, seconds = map(int, time_left_parts)
-                        end_time = self.bot.now_utc() + datetime.timedelta(hours=hours, minutes=minutes, seconds=seconds)
-                        hide_data["auto_hide_until"] = end_time
-                except (ValueError, IndexError):
-                    pass
+                hide_data["auto_hide_until"] = promo["expiry_dt"]
                 break
         if existing:
             await self.promo_exclusions.update_one({"promo_name": promo_name_lower}, {"$set": hide_data})
